@@ -1,0 +1,1464 @@
+<div id="view-page-1" class="page-view">
+    <div class="market-section" style="background:var(--card); border-radius:12px; padding:25px; margin-bottom:25px;">
+        <div style="display:flex; justify-content:space-between; border-bottom:1px solid #2b2f36; padding-bottom:15px; margin-bottom:15px;">
+            <div><div style="color:var(--dim); font-size:0.7em;">大盤收盤</div><div id="m-taiex" style="font-size:1.2em; font-weight:bold;">--</div></div>
+            <div><div style="color:var(--dim); font-size:0.7em;">匯率 (USD/TWD)</div><div id="m-fx" style="color:#f0b90b; font-size:1.2em; font-weight:bold;">--</div></div>
+            <div><div id="m-diagnosis" style="color:var(--success); font-size:1.3em;">載入中...</div></div>
+            <div style="text-align:right;"><div style="color:var(--dim); font-size:0.7em;">資料日期</div><div id="m-date">--</div></div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:10px;">
+            <div style="background:#1e2329; padding:9px 10px; border-radius:8px; text-align:center;"><div style="color:var(--dim); font-size:0.66em;">三大法人</div><div id="s-a" style="font-weight:bold; font-size:0.98em; margin-top:2px;">--</div></div>
+            <div style="background:#1e2329; padding:9px 10px; border-radius:8px; text-align:center;"><div style="color:var(--dim); font-size:0.66em;">臺指</div><div id="s-b-tx" style="font-weight:bold; font-size:0.98em; margin-top:2px;">--</div></div>
+            <div style="background:#1e2329; padding:9px 10px; border-radius:8px; text-align:center;"><div style="color:var(--dim); font-size:0.66em;">金融</div><div id="s-b-fin" style="font-weight:bold; font-size:0.98em; margin-top:2px;">--</div></div>
+            <div style="background:#1e2329; padding:9px 10px; border-radius:8px; text-align:center;"><div style="color:var(--dim); font-size:0.66em;">電子</div><div id="s-b-elec" style="font-weight:bold; font-size:0.98em; margin-top:2px;">--</div></div>
+            <div style="background:#1e2329; padding:9px 10px; border-radius:8px; text-align:center;"><div style="color:var(--dim); font-size:0.66em;">小臺</div><div id="s-b-mtx" style="font-weight:bold; font-size:0.98em; margin-top:2px;">--</div></div>
+            <div style="background:#1e2329; padding:9px 10px; border-radius:8px; text-align:center; border:1px solid #3794ff33;"><div style="color:var(--dim); font-size:0.66em;">連動</div><div id="s-linkage" style="color:var(--primary); font-weight:bold; font-size:0.98em; margin-top:2px;">--</div></div>
+        </div>
+    </div>
+
+    <div id="stock-detail-view" style="display:none;">
+        
+        <div class="s-card" style="background:var(--card); padding:25px; border-radius:12px; margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:20px;">
+                <div style="display:flex; align-items:baseline; gap:15px; flex-wrap:wrap;">
+                    <h1 id="view-symbol" style="margin:0; font-size:2.5em;">--</h1>
+                    <h2 id="view-name" style="margin:0; color:var(--dim); font-weight:normal;">--</h2>
+                    
+                    <select id="view-timeframe" class="p-input" style="width:auto; padding:6px 10px; font-size:0.9em;" onchange="if(currentSymbol) refreshStockPage(currentSymbol)">
+                        <option value="5m">5</option>
+                        <option value="15m">15</option>
+                        <option value="1h">60</option>
+                        <option value="1d" selected>D</option>
+                        <option value="1wk">W</option>
+                        <option value="1mo">M</option>
+                    </select>
+
+                    <button id="btn-watchlist-toggle" onclick="toggleWatchlist()" style="background:#1e2329; border:1px solid var(--primary); color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">⭐ 加入清單</button>
+                </div>
+                <div id="view-data-time" style="color:var(--primary); font-size:0.85em; padding:6px 12px; border:1px solid #3794ff33; border-radius:6px; background:rgba(55,148,255,0.05);">🕒 最新更新: --</div>
+            </div>
+            
+            <div style="display:grid; grid-template-columns:repeat(6, 1fr); gap:12px;">
+                <div style="background:#1e2329; padding:15px; border-radius:8px; text-align:center;"><div style="color:var(--dim); font-size:0.7em;">MA</div><div id="s-ma" style="font-weight:bold;">--</div><div id="s-ma-reason" style="color:var(--dim); font-size:0.68em; line-height:1.45; margin-top:6px; min-height:32px;">--</div></div>
+                <div style="background:#1e2329; padding:15px; border-radius:8px; text-align:center;"><div style="color:var(--dim); font-size:0.7em;">KD</div><div id="s-kd" style="font-weight:bold;">--</div><div id="s-kd-reason" style="color:var(--dim); font-size:0.68em; line-height:1.45; margin-top:6px; min-height:32px;">--</div><label id="s-kd-zero-wrap" style="display:none; align-items:center; justify-content:center; gap:6px; margin-top:8px; color:#7c3aed; font-size:0.72em; cursor:pointer;"><input id="s-kd-zero-toggle" type="checkbox" style="accent-color:#7c3aed;"> <span id="s-kd-zero-text">低於閾值時歸 0</span></label></div>
+                <div style="background:#1e2329; padding:15px; border-radius:8px; text-align:center;"><div style="color:var(--dim); font-size:0.7em;">RSI</div><div id="s-rsi" style="font-weight:bold;">--</div><div id="s-rsi-reason" style="color:var(--dim); font-size:0.68em; line-height:1.45; margin-top:6px; min-height:32px;">--</div></div>
+                <div style="background:#1e2329; padding:15px; border-radius:8px; text-align:center;"><div style="color:var(--dim); font-size:0.7em;">MACD</div><div id="s-macd" style="font-weight:bold;">--</div><div id="s-macd-reason" style="color:var(--dim); font-size:0.68em; line-height:1.45; margin-top:6px; min-height:32px;">--</div><label id="s-macd-zero-wrap" style="display:none; align-items:center; justify-content:center; gap:6px; margin-top:8px; color:#f0b90b; font-size:0.72em; cursor:pointer;"><input id="s-macd-zero-toggle" type="checkbox" style="accent-color:#f0b90b;"> <span id="s-macd-zero-text">低於閾值時歸 0</span></label></div>
+                <div style="background:#1e2329; padding:15px; border-radius:8px; text-align:center;"><div style="color:var(--dim); font-size:0.7em;">VOL</div><div id="s-vol" style="font-weight:bold;">--</div><div id="s-vol-reason" style="color:var(--dim); font-size:0.68em; line-height:1.45; margin-top:6px; min-height:32px;">--</div></div>
+                <div style="background:#1e2329; padding:15px; border-radius:8px; text-align:center; border:1px solid var(--primary);"><div style="color:var(--primary); font-size:0.7em;">總分</div><div id="s-total" style="color:var(--primary); font-size:1.3em; font-weight:bold;">--</div></div>
+            </div>
+        </div>
+        
+        <div class="s-card" style="background:var(--card); border-radius:12px; margin-bottom:20px; overflow:hidden;">
+            <div onclick="toggleSection('collapse-chart', 'icon-chart')" style="padding:20px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; background:#181c22;">
+                <h3 style="margin:0; color:#3794ff; font-size:1.1em;">📈 歷史分數&技術分析</h3>
+                <div style="display:flex; align-items:center; gap:12px;" onclick="event.stopPropagation()">
+                    <details id="chart-menu" style="position:relative;">
+                        <summary style="list-style:none; cursor:pointer; color:#848e9c; font-size:0.85em; border:1px solid #2b2f36; border-radius:6px; padding:5px 10px; user-select:none;">圖表選單 ▾</summary>
+                        <div style="position:absolute; right:0; top:34px; background:#11151b; border:1px solid #2b2f36; border-radius:8px; padding:10px 12px; min-width:180px; z-index:10; box-shadow:0 8px 20px rgba(0,0,0,0.35);">
+                            <label style="display:flex; align-items:center; gap:8px; color:#d6dde8; font-size:0.82em; margin-bottom:8px;"><input id="chart-toggle-score" type="checkbox" checked>15日分數</label>
+                            <label style="display:flex; align-items:center; gap:8px; color:#d6dde8; font-size:0.82em; margin-bottom:8px;"><input id="chart-toggle-kline" type="checkbox" checked>K線圖 + MA</label>
+                            <label style="display:flex; align-items:center; gap:8px; color:#d6dde8; font-size:0.82em; margin-bottom:8px;"><input id="chart-toggle-kd" type="checkbox" checked>KD</label>
+                            <label style="display:flex; align-items:center; gap:8px; color:#d6dde8; font-size:0.82em; margin-bottom:8px;"><input id="chart-toggle-rsi" type="checkbox" checked>RSI</label>
+                            <label style="display:flex; align-items:center; gap:8px; color:#d6dde8; font-size:0.82em; margin-bottom:8px;"><input id="chart-toggle-macd" type="checkbox" checked>MACD</label>
+                            <label style="display:flex; align-items:center; gap:8px; color:#d6dde8; font-size:0.82em;"><input id="chart-toggle-volume" type="checkbox" checked>成交量</label>
+                        </div>
+                    </details>
+                    <span id="icon-chart" style="color:var(--dim); transition:0.3s;">▼ 展開</span>
+                </div>
+            </div>
+            <div id="collapse-chart" style="display:none; padding:20px; border-top:1px solid #2b2f36;">
+                <div id="chart-block-score">
+                    <div style="color:var(--dim); font-size:0.9em; margin-bottom:10px;">📉 15日分數（日K固定）</div>
+                    <div id="scoreTrendChart" style="height:250px; width:100%; background:#0b0e11; border:1px solid #2b2f36; border-radius:8px;"></div>
+                </div>
+
+                <div id="chart-block-kline">
+                    <div style="color:var(--dim); font-size:0.9em; margin:20px 0 10px;">🕯️ K線圖（跟隨級別）＋ MA</div>
+                    <div id="klineChartContainer" style="height:300px; width:100%; background:#0b0e11; border:1px solid #2b2f36; border-radius:8px;"></div>
+                </div>
+
+                <div id="chart-block-kdrsi">
+                    <div style="color:var(--dim); font-size:0.9em; margin:20px 0 10px;">🧩 KD / RSI 原始指標</div>
+                    <div id="kdRsiRawChart" style="height:240px; width:100%; background:#0b0e11; border:1px solid #2b2f36; border-radius:8px;"></div>
+                </div>
+
+                <div id="chart-block-macd">
+                    <div style="color:var(--dim); font-size:0.9em; margin:20px 0 10px;">📊 MACD 原始圖（DIF / DEA / OSC）</div>
+                    <div id="macdRawChart" style="height:240px; width:100%; background:#0b0e11; border:1px solid #2b2f36; border-radius:8px;"></div>
+                </div>
+
+                <div id="chart-block-volume">
+                    <div style="color:var(--dim); font-size:0.9em; margin:20px 0 10px;">📦 成交量（紅漲綠跌）</div>
+                    <div id="volumeRawChart" style="height:200px; width:100%; background:#0b0e11; border:1px solid #2b2f36; border-radius:8px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="s-card" style="background:var(--card); border-radius:12px; margin-bottom:20px; overflow:hidden;">
+            <div onclick="toggleSection('collapse-bt', 'icon-bt')" style="padding:20px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; background:#181c22;">
+                <h3 style="margin:0; color:#f0b90b; font-size:1.1em;">📊 個股回測</h3>
+                <span id="icon-bt" style="color:var(--dim); transition:0.3s;">▼ 展開</span>
+            </div>
+            <div id="collapse-bt" style="display:none; padding:20px; border-top:1px solid #2b2f36;">
+                
+                <div style="background: #1e2329; padding: 25px; border-radius: 8px; margin-bottom: 20px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
+                        <div>
+                            <h4 style="margin-top:0; font-size:0.95em; color:#fff; border-left: 4px solid #3794ff; padding-left: 12px; margin-bottom: 25px;">⚙️ 環境設定</h4>
+                            <div style="display: grid; grid-template-columns: 120px 1fr; gap: 30px; margin-bottom: 15px;">
+                                <div>
+                                    <label class="p-label">初始資金 (萬)</label>
+                                    <input type="number" id="s-bt-capital" value="100" class="p-input">
+                                </div>
+                                <div>
+                                    <label class="p-label">交易單位</label>
+                                    <select id="s-bt-unit" class="p-input">
+                                        <option value="lot" selected>張 (1000股)</option>
+                                        <option value="share">股 (1股)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 15px;">
+                                <label class="p-label">📅 策略開始時間 (萬年曆 - 精確至分)</label>
+                                <input type="datetime-local" id="s-bt-start" value="2023-01-01T09:00" class="p-input">
+                            </div>
+                            <div style="margin-bottom: 15px;">
+                                <label class="p-label">📅 策略結束時間</label>
+                                <input type="datetime-local" id="s-bt-end" value="2024-04-01T13:30" class="p-input">
+                            </div>
+                            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 30px;">
+                                <div>
+                                    <label class="p-label">級別</label>
+                                    <select id="s-bt-level" class="p-input">
+                                        <option value="5m">5</option>
+                                        <option value="1h">60</option>
+                                        <option value="1d" selected>D</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="p-label">手續費‰</label>
+                                    <input type="number" id="s-bt-fee" value="1.425" class="p-input" step="0.001">
+                                </div>
+                                <div>
+                                    <label class="p-label">交易稅‰</label>
+                                    <input type="number" id="s-bt-tax" value="3.000" class="p-input" step="0.001">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h4 style="margin-top:0; color:#fff; border-bottom:1px solid #2b2f36; padding-bottom:8px; margin-bottom:15px;">🎯 買賣觸發點</h4>
+                            <div style="margin-bottom: 20px;">
+                                <label class="p-label" style="color:#3794ff; margin-bottom:10px;">買入總分 (可多選)</label>
+                                <div id="s-bt-buy-score" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
+                                    <label style="display:flex; align-items:center; gap:6px; background:#0b0e11; border:1px solid #2b3139; border-radius:8px; padding:10px 14px; cursor:pointer; color:#848e9c;"><input type="checkbox" value="2" style="accent-color:#3794ff;"> 2 分</label>
+                                    <label style="display:flex; align-items:center; gap:6px; background:#0b0e11; border:1px solid #2b3139; border-radius:8px; padding:10px 14px; cursor:pointer; color:#848e9c;"><input type="checkbox" value="1" checked style="accent-color:#3794ff;"> 1 分</label>
+                                    <label style="display:flex; align-items:center; gap:6px; background:#0b0e11; border:1px solid #2b3139; border-radius:8px; padding:10px 14px; cursor:pointer; color:#848e9c;"><input type="checkbox" value="0" style="accent-color:#3794ff;"> 0 分</label>
+                                    <label style="display:flex; align-items:center; gap:6px; background:#0b0e11; border:1px solid #2b3139; border-radius:8px; padding:10px 14px; cursor:pointer; color:#848e9c;"><input type="checkbox" value="-1" checked style="accent-color:#3794ff;"> -1 分</label>
+                                    <label style="display:flex; align-items:center; gap:6px; background:#0b0e11; border:1px solid #2b3139; border-radius:8px; padding:10px 14px; cursor:pointer; color:#848e9c;"><input type="checkbox" value="-2" style="accent-color:#3794ff;"> -2 分</label>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="p-label" style="color:#f0b90b; margin-bottom:10px;">賣出總分 (任一命中即平倉)</label>
+                                <div id="s-bt-sell-score" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
+                                    <label style="display:flex; align-items:center; gap:6px; background:#0b0e11; border:1px solid #2b3139; border-radius:8px; padding:10px 14px; cursor:pointer; color:#848e9c;"><input type="checkbox" value="5" checked style="accent-color:#f0b90b;"> 5 分</label>
+                                    <label style="display:flex; align-items:center; gap:6px; background:#0b0e11; border:1px solid #2b3139; border-radius:8px; padding:10px 14px; cursor:pointer; color:#848e9c;"><input type="checkbox" value="4" checked style="accent-color:#f0b90b;"> 4 分</label>
+                                    <label style="display:flex; align-items:center; gap:6px; background:#0b0e11; border:1px solid #2b3139; border-radius:8px; padding:10px 14px; cursor:pointer; color:#848e9c;"><input type="checkbox" value="3" style="accent-color:#f0b90b;"> 3 分</label>
+                                    <label style="display:flex; align-items:center; gap:6px; background:#0b0e11; border:1px solid #2b3139; border-radius:8px; padding:10px 14px; cursor:pointer; color:#848e9c;"><input type="checkbox" value="-3" checked style="accent-color:#f0b90b;"> -3 分</label>
+                                    <label style="display:flex; align-items:center; gap:6px; background:#0b0e11; border:1px solid #2b3139; border-radius:8px; padding:10px 14px; cursor:pointer; color:#848e9c;"><input type="checkbox" value="-4" style="accent-color:#f0b90b;"> -4 分</label>
+                                    <label style="display:flex; align-items:center; gap:6px; background:#0b0e11; border:1px solid #2b3139; border-radius:8px; padding:10px 14px; cursor:pointer; color:#848e9c;"><input type="checkbox" value="-5" style="accent-color:#f0b90b;"> -5 分</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="runSingleStockBacktest()" style="background:#f0b90b; color:#000; border:none; padding:12px 25px; font-weight:bold; cursor:pointer; border-radius:6px; width:100%;">▶ 執行單一個股回測</button>
+
+                <div id="s-bt-result-placeholder" style="margin-top:16px; color:var(--dim); text-align:center; padding:16px; background:rgba(0,0,0,0.2); border-radius:8px;">設定完成後，點擊執行來產生個股回測報表...</div>
+
+                <div id="s-bt-result-panel" style="display:none; margin-top:16px;">
+                    <div style="overflow-x:auto;">
+                        <table id="s-bt-summary-table" class="data-table" style="width:100%; border-collapse:collapse;">
+                            <thead>
+                                <tr>
+                                    <th style="text-align:left;">策略</th>
+                                    <th style="text-align:center;">報酬率</th>
+                                    <th style="text-align:center;">交易次數</th>
+                                    <th style="text-align:center;">最終現金</th>
+                                </tr>
+                            </thead>
+                            <tbody id="s-bt-summary-body"></tbody>
+                        </table>
+                    </div>
+
+                    <div style="margin-top:16px; display:flex; align-items:end; gap:12px; flex-wrap:wrap;">
+                        <div>
+                            <label class="p-label">查看策略交易明細</label>
+                            <select id="s-bt-trade-strategy" class="p-input" style="width:180px; margin:0;" onchange="renderSingleTradeLog()"></select>
+                        </div>
+                    </div>
+
+                    <div style="overflow-x:auto; margin-top:12px;">
+                        <table class="data-table" style="width:100%; border-collapse:collapse;">
+                            <thead>
+                                <tr>
+                                    <th>時間</th><th>動作</th><th>價格</th><th>成本</th><th>餘額</th><th style="text-align:right;">獲利%</th>
+                                </tr>
+                            </thead>
+                            <tbody id="s-bt-trade-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <div id="stock-view-placeholder" style="text-align:center; padding:100px; color:#333; font-size:1.2em;">⬅️ 搜尋代號開始診斷</div>
+</div>
+
+<script>
+    // ================= [第一頁：專屬邏輯] =================
+    let singleBacktestCache = null;
+    let currentInstantStockData = null;
+
+    function formatSignedScore(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return '--';
+        return num > 0 ? `+${num}` : String(num);
+    }
+
+    function setMarketDiagnosisStyle(score) {
+        const el = document.getElementById('m-diagnosis');
+        const num = Number(score);
+        if (!el || !Number.isFinite(num)) return;
+        if (num >= 2) el.style.color = 'var(--success)';
+        else if (num <= -2) el.style.color = 'var(--danger)';
+        else el.style.color = '#f0b90b';
+    }
+
+    function loadMarketOverview() {
+        fetch('/api/market/latest')
+        .then(res => res.json())
+        .then(data => {
+            if (!data || data.error) {
+                document.getElementById('m-diagnosis').innerText = '大盤資料載入失敗';
+                return;
+            }
+
+            document.getElementById('m-taiex').innerText = data.taiex_price ? Number(data.taiex_price).toLocaleString('zh-TW') : '--';
+            document.getElementById('m-fx').innerText = data.twd_fx ? Number(data.twd_fx).toFixed(2) : '--';
+            document.getElementById('m-date').innerText = data.date || '--';
+            document.getElementById('s-a').innerText = formatSignedScore(data.score_a);
+            document.getElementById('s-b-tx').innerText = formatSignedScore(data.score_b_tx);
+            document.getElementById('s-b-fin').innerText = formatSignedScore(data.score_b_fin);
+            document.getElementById('s-b-elec').innerText = formatSignedScore(data.score_b_elec);
+            document.getElementById('s-b-mtx').innerText = formatSignedScore(data.score_b_mtx);
+            document.getElementById('s-linkage').innerText = formatSignedScore(data.score_c_total);
+
+            const diagnosisText = data.diagnosis || `大盤總分 ${formatSignedScore(data.score_c_total)}`;
+            document.getElementById('m-diagnosis').innerText = diagnosisText;
+            setMarketDiagnosisStyle(data.score_c_total);
+        })
+        .catch(err => {
+            document.getElementById('m-diagnosis').innerText = `大盤資料異常: ${err.message}`;
+            document.getElementById('m-diagnosis').style.color = 'var(--danger)';
+        });
+    }
+
+    // --- 收折區塊切換邏輯 ---
+    function toggleSection(sectionId, iconId) {
+        const sec = document.getElementById(sectionId);
+        const icon = document.getElementById(iconId);
+        if (sec.style.display === 'none') {
+            sec.style.display = 'block';
+            icon.innerText = '▲ 收起';
+            if (sectionId === 'collapse-chart' && currentSymbol) {
+                const timeframe = document.getElementById('view-timeframe').value;
+                renderTrendChart(currentSymbol, timeframe);
+            }
+        } else {
+            sec.style.display = 'none';
+            icon.innerText = '▼ 展開';
+        }
+    }
+
+    // --- 接收主框架呼叫，刷新個股資料 ---
+    function refreshStockPage(symbol) {
+        document.getElementById('stock-view-placeholder').style.display = 'none';
+        document.getElementById('stock-detail-view').style.display = 'block';
+        document.getElementById('view-symbol').innerText = symbol;
+        document.getElementById('view-name').innerText = "資料載入中...";
+        document.getElementById('view-data-time').innerText = "🕒 抓取最新數據中...";
+        currentInstantStockData = null;
+        const macdZeroToggle = getMacdZeroToggle();
+        if (macdZeroToggle) macdZeroToggle.checked = false;
+        const macdZeroWrap = document.getElementById('s-macd-zero-wrap');
+        if (macdZeroWrap) macdZeroWrap.style.display = 'none';
+        
+        const kdZeroToggle = getKdZeroToggle();
+        if (kdZeroToggle) kdZeroToggle.checked = false;
+        const kdZeroWrap = document.getElementById('s-kd-zero-wrap');
+        if (kdZeroWrap) kdZeroWrap.style.display = 'none';
+        
+        // 取得使用者選擇的 K 線級別
+        const timeframe = document.getElementById('view-timeframe').value;
+
+        const btn = document.getElementById('btn-watchlist-toggle');
+        btn.style.background = '#1e2329';
+        btn.innerText = '⭐ 加入清單';
+
+        // 🔥 將 K 線級別透過 URL 參數傳給後端
+        fetch(`/api/tools/instant/${symbol}?timeframe=${timeframe}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                document.getElementById('view-name').innerText = "查詢失敗";
+                document.getElementById('view-data-time').innerText = "⚠️ 錯誤: " + data.error;
+                return;
+            }
+
+            // 以後端傳來的 data.name 為主，如果沒有才用字典，最後才顯示"個股"
+            const displayName = data.name || (typeof stockNames !== 'undefined' ? stockNames[symbol] : null) || "個股";
+            document.getElementById('view-name').innerText = displayName;
+            
+            // 🔥 更新時間：只顯示年月日
+            const rawUpdateTime = data.datetime || data.date || '--';
+            let updateDate = '--';
+            if (rawUpdateTime && rawUpdateTime !== '--') {
+                updateDate = String(rawUpdateTime).split(' ')[0].split('T')[0];
+            }
+            document.getElementById('view-data-time').innerText = `🕒 最新更新: ${updateDate}`;
+
+            currentInstantStockData = data;
+            refreshMacdZeroOption();
+            refreshKdZeroOption();
+            updateInstantScoreDisplay(data);
+
+            // 畫圖
+            renderTrendChart(symbol, timeframe);
+        })
+        .catch(err => {
+            document.getElementById('view-name').innerText = "連線異常";
+            console.error("個股資料讀取失敗:", err);
+        });
+    }
+
+    loadMarketOverview();
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const chartMenu = document.getElementById('chart-menu');
+
+        const macdToggle = getMacdZeroToggle();
+        if (macdToggle) {
+            macdToggle.addEventListener('change', () => {
+                if (currentInstantStockData) {
+                    updateInstantScoreDisplay(currentInstantStockData);
+                    logAdjustmentIfNeeded('MACD', macdToggle.checked);
+                }
+            });
+        }
+
+        const kdToggle = getKdZeroToggle();
+        if (kdToggle) {
+            kdToggle.addEventListener('change', () => {
+                if (currentInstantStockData) {
+                    updateInstantScoreDisplay(currentInstantStockData);
+                    logAdjustmentIfNeeded('KD', kdToggle.checked);
+                }
+            });
+        }
+
+        ['score', 'kline', 'kd', 'rsi', 'macd', 'volume'].forEach((key) => {
+            const cb = document.getElementById(`chart-toggle-${key}`);
+            if (!cb) return;
+            cb.addEventListener('change', () => {
+                applyChartVisibility();
+                const chartPanel = document.getElementById('collapse-chart');
+                if (currentSymbol && chartPanel && chartPanel.style.display !== 'none') {
+                    const timeframe = document.getElementById('view-timeframe')?.value || '1d';
+                    renderTrendChart(currentSymbol, timeframe);
+                }
+            });
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!chartMenu || !chartMenu.hasAttribute('open')) return;
+            if (!chartMenu.contains(event.target)) {
+                chartMenu.removeAttribute('open');
+            }
+        });
+
+        applyChartVisibility();
+    });
+
+    function logAdjustmentIfNeeded(indicatorType, isChecked) {
+        if (!isChecked || !currentInstantStockData) return;
+        
+        const scores = currentInstantStockData?.scores || {};
+        const metrics = currentInstantStockData?.metrics || {};
+        const symbol = currentSymbol;
+        const timeframe = document.getElementById('view-timeframe')?.value || '1d';
+        
+        let changePct = 0;
+        let originalScore = 0;
+        
+        if (indicatorType === 'MACD') {
+            changePct = getMacdChangePct(currentInstantStockData);
+            originalScore = Number(scores.MACD) || 0;
+        } else if (indicatorType === 'KD') {
+            changePct = getKdChangePct(currentInstantStockData);
+            originalScore = Number(scores.KD) || 0;
+        }
+        
+        if (!changePct) return;
+        
+        const adjustedScore = indicatorType === 'MACD' 
+            ? (getMacdZeroToggle()?.checked ? 0 : originalScore)
+            : (getKdZeroToggle()?.checked ? 0 : originalScore);
+        
+        fetch('/api/log-adjustment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol,
+                indicator_type: indicatorType,
+                timeframe,
+                change_pct: changePct,
+                original_score: originalScore,
+                adjusted_score: adjustedScore
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            console.log(`✓ 已記錄 ${symbol} 的 ${indicatorType} 調整`);
+        })
+        .catch(err => {
+            console.error(`❌ 記錄調整失敗:`, err);
+        });
+    }
+
+    // --- 加入/更新追蹤清單 ---
+    function toggleWatchlist() {
+        if (!currentSymbol) return;
+        fetch(`/api/watchlist/add/${currentSymbol}`, { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                const btn = document.getElementById('btn-watchlist-toggle');
+                btn.style.background = 'var(--primary)';
+                btn.innerText = '✔️ 已加入';
+                if (typeof fetchWatchlist === 'function') fetchWatchlist();
+            } else { alert(data.message); }
+        }).catch(err => console.error("加入清單失敗:", err));
+    }
+
+    // --- 繪製歷史分數趨勢圖 ---
+    let trendChartInstance = null;
+    let kdRsiChartInstance = null;
+    let macdChartInstance = null;
+    let volumeChartInstance = null;
+    let klineChartInstance = null;
+    let klineSeries = null;
+    let maShortSeries = null;
+    let maMidSeries = null;
+    let maLongSeries = null;
+    const FORCE_CUSTOM_CANVAS_CHARTS = false;
+
+    function isChartEnabled(key) {
+        const el = document.getElementById(`chart-toggle-${key}`);
+        return el ? el.checked : true;
+    }
+
+    function applyChartVisibility() {
+        const map = [
+            ['score', 'chart-block-score'],
+            ['kline', 'chart-block-kline'],
+            ['macd', 'chart-block-macd'],
+            ['volume', 'chart-block-volume']
+        ];
+
+        map.forEach(([key, blockId]) => {
+            const block = document.getElementById(blockId);
+            if (block) block.style.display = isChartEnabled(key) ? '' : 'none';
+        });
+
+        const kdRsiBlock = document.getElementById('chart-block-kdrsi');
+        if (kdRsiBlock) kdRsiBlock.style.display = (isChartEnabled('kd') || isChartEnabled('rsi')) ? '' : 'none';
+
+        const orderedBlocks = [
+            document.getElementById('chart-block-score'),
+            document.getElementById('chart-block-kline'),
+            document.getElementById('chart-block-kdrsi'),
+            document.getElementById('chart-block-macd'),
+            document.getElementById('chart-block-volume')
+        ].filter(Boolean);
+
+        const visibleBlocks = orderedBlocks.filter(block => block.style.display !== 'none');
+        visibleBlocks.forEach((block, idx) => {
+            const titleEl = block.firstElementChild;
+            if (!titleEl) return;
+            titleEl.style.marginTop = idx === 0 ? '0' : '20px';
+            titleEl.style.marginBottom = '10px';
+        });
+    }
+
+    function formatDateLabel(rawDate) {
+        if (!rawDate) return '--';
+        const datePart = String(rawDate).split('T')[0].split(' ')[0];
+        const parts = datePart.split('-');
+        return parts.length === 3 ? `${parts[1]}-${parts[2]}` : datePart;
+    }
+
+    function isIntradayTimeframe(timeframe) {
+        return ['1m', '5m', '10m', '15m', '30m', '1h', '60m'].includes(String(timeframe || '').toLowerCase());
+    }
+
+    function parseChartTime(rawDate, timeframe = '1d') {
+        if (!rawDate) return null;
+        const raw = String(rawDate).trim();
+        const datePart = raw.split('T')[0].split(' ')[0];
+        const [y, m, d] = datePart.split('-').map(Number);
+
+        if (!isIntradayTimeframe(timeframe)) {
+            if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+            return { year: y, month: m, day: d };
+        }
+
+        const iso = raw.includes('T') ? raw : raw.replace(' ', 'T');
+        const dt = new Date(iso);
+        if (Number.isNaN(dt.getTime())) return null;
+        return Math.floor(dt.getTime() / 1000);
+    }
+
+    function chartTimeKey(time) {
+        if (time == null) return Number.NEGATIVE_INFINITY;
+        if (typeof time === 'number') return time;
+        if (typeof time === 'string') {
+            const dt = new Date(time);
+            return Number.isNaN(dt.getTime()) ? Number.NEGATIVE_INFINITY : Math.floor(dt.getTime() / 1000);
+        }
+        if (typeof time === 'object' && Number.isFinite(time.year) && Number.isFinite(time.month) && Number.isFinite(time.day)) {
+            return Date.UTC(time.year, time.month - 1, time.day) / 1000;
+        }
+        return Number.NEGATIVE_INFINITY;
+    }
+
+    function sortSeriesByTime(data) {
+        return [...data].sort((a, b) => chartTimeKey(a.time) - chartTimeKey(b.time));
+    }
+
+    function setupCanvasChart(containerId, height) {
+        const container = document.getElementById(containerId);
+        if (!container) return null;
+
+        container.innerHTML = '';
+        const canvas = document.createElement('canvas');
+        const width = Math.max(container.clientWidth, 620);
+        const dpr = window.devicePixelRatio || 1;
+
+        canvas.style.width = `${width}px`;
+        canvas.style.height = `${height}px`;
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        container.appendChild(canvas);
+
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        return { ctx, width, height, pad: { left: 50, right: 14, top: 14, bottom: 26 } };
+    }
+
+    function drawChartGrid(ctx, width, height, pad, rows = 4, cols = 6) {
+        ctx.strokeStyle = '#1a1f25';
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i <= rows; i++) {
+            const y = pad.top + ((height - pad.top - pad.bottom) * i / rows);
+            ctx.beginPath();
+            ctx.moveTo(pad.left, y);
+            ctx.lineTo(width - pad.right, y);
+            ctx.stroke();
+        }
+
+        for (let i = 0; i <= cols; i++) {
+            const x = pad.left + ((width - pad.left - pad.right) * i / cols);
+            ctx.beginPath();
+            ctx.moveTo(x, pad.top);
+            ctx.lineTo(x, height - pad.bottom);
+            ctx.stroke();
+        }
+    }
+
+    function drawAxisLabels(ctx, width, height, pad, minVal, maxVal, digits = 2) {
+        ctx.fillStyle = '#848e9c';
+        ctx.font = '11px Microsoft JhengHei';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+
+        for (let i = 0; i <= 4; i++) {
+            const y = pad.top + ((height - pad.top - pad.bottom) * i / 4);
+            const val = maxVal - ((maxVal - minVal) * i / 4);
+            ctx.fillText(formatNum(val, digits), pad.left - 6, y);
+        }
+    }
+
+    function drawTimeAxisLabels(ctx, width, height, pad, labels, tickCount = 6) {
+        if (!Array.isArray(labels) || !labels.length) return;
+
+        const total = labels.length;
+        const plotW = width - pad.left - pad.right;
+        const maxTicks = Math.max(2, Math.min(tickCount, total));
+        const idxSet = new Set();
+
+        for (let i = 0; i < maxTicks; i++) {
+            const idx = Math.round((total - 1) * (i / (maxTicks - 1)));
+            idxSet.add(idx);
+        }
+
+        ctx.fillStyle = '#848e9c';
+        ctx.font = '11px Microsoft JhengHei';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+
+        for (const idx of Array.from(idxSet).sort((a, b) => a - b)) {
+            const x = total > 1 ? pad.left + (plotW * idx / (total - 1)) : pad.left + plotW / 2;
+            const text = String(labels[idx] || '');
+            ctx.fillText(text, x, height - pad.bottom + 6);
+        }
+    }
+
+    function toY(value, minVal, maxVal, height, pad) {
+        if (!Number.isFinite(value)) return null;
+        const range = maxVal - minVal || 1;
+        const ratio = (value - minVal) / range;
+        return (height - pad.bottom) - ratio * (height - pad.top - pad.bottom);
+    }
+
+    function drawLineSeriesCanvas(ctx, values, color, minVal, maxVal, width, height, pad, lineWidth = 1.8) {
+        if (!values.length) return;
+        const plotW = width - pad.left - pad.right;
+        const stepX = values.length > 1 ? plotW / (values.length - 1) : plotW;
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+
+        let hasStarted = false;
+        values.forEach((v, idx) => {
+            const y = toY(v, minVal, maxVal, height, pad);
+            if (y === null) return;
+            const x = pad.left + idx * stepX;
+            if (!hasStarted) {
+                ctx.moveTo(x, y);
+                hasStarted = true;
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        if (hasStarted) ctx.stroke();
+    }
+
+    function drawBarsCanvas(ctx, values, colors, minVal, maxVal, width, height, pad, baseValue = null) {
+        if (!values.length) return;
+        const plotW = width - pad.left - pad.right;
+        const stepX = values.length > 0 ? plotW / values.length : plotW;
+        const barW = Math.max(1, stepX * 0.72);
+        const baseY = toY(baseValue ?? minVal, minVal, maxVal, height, pad);
+
+        values.forEach((v, idx) => {
+            if (!Number.isFinite(v)) return;
+            const x = pad.left + idx * stepX + (stepX - barW) / 2;
+            const y = toY(v, minVal, maxVal, height, pad);
+            const top = Math.min(y, baseY);
+            const h = Math.max(1, Math.abs(y - baseY));
+            ctx.fillStyle = colors[idx] || 'rgba(132,142,156,0.45)';
+            ctx.fillRect(x, top, barW, h);
+        });
+    }
+
+    function renderScoreChartCanvas(scoreItems) {
+        const chart = setupCanvasChart('scoreTrendChart', 250);
+        if (!chart) return;
+        const { ctx, width, height, pad } = chart;
+        drawChartGrid(ctx, width, height, pad);
+        drawAxisLabels(ctx, width, height, pad, -5, 5, 0);
+        drawTimeAxisLabels(ctx, width, height, pad, scoreItems.map(item => formatDateLabel(item.date)), 6);
+        const values = scoreItems.map(item => Number(item.score));
+        drawLineSeriesCanvas(ctx, values, '#3794ff', -5, 5, width, height, pad, 2.2);
+    }
+
+    function renderRawTechnicalChartsCanvas(items) {
+        const kSeries = items.map(item => Number(item.indicators?.k));
+        const dSeries = items.map(item => Number(item.indicators?.d));
+        const rsi5Series = items.map(item => Number(item.indicators?.rsi5));
+        const rsi10Series = items.map(item => Number(item.indicators?.rsi10));
+
+        if (isChartEnabled('kd') || isChartEnabled('rsi')) {
+            const chart = setupCanvasChart('kdRsiRawChart', 240);
+            if (chart) {
+                const { ctx, width, height, pad } = chart;
+                drawChartGrid(ctx, width, height, pad);
+                drawAxisLabels(ctx, width, height, pad, 0, 100);
+                if (isChartEnabled('kd')) {
+                    drawLineSeriesCanvas(ctx, kSeries, '#00d1b2', 0, 100, width, height, pad, 2);
+                    drawLineSeriesCanvas(ctx, dSeries, '#3794ff', 0, 100, width, height, pad, 2);
+                }
+                if (isChartEnabled('rsi')) {
+                    drawLineSeriesCanvas(ctx, rsi5Series, '#f0b90b', 0, 100, width, height, pad, 1.8);
+                    drawLineSeriesCanvas(ctx, rsi10Series, '#ff7f50', 0, 100, width, height, pad, 1.8);
+                }
+            }
+        }
+
+        if (isChartEnabled('macd')) {
+            const macd = items.map(item => Number(item.indicators?.macd));
+            const signal = items.map(item => Number(item.indicators?.signal));
+            const osc = items.map(item => Number(item.indicators?.osc));
+            const finite = [...macd, ...signal, ...osc].filter(Number.isFinite);
+            const minVal = finite.length ? Math.min(...finite, 0) : -1;
+            const maxVal = finite.length ? Math.max(...finite, 0) : 1;
+
+            const chart = setupCanvasChart('macdRawChart', 240);
+            if (chart) {
+                const { ctx, width, height, pad } = chart;
+                drawChartGrid(ctx, width, height, pad);
+                drawAxisLabels(ctx, width, height, pad, minVal, maxVal);
+                const oscColors = osc.map(v => (Number(v) >= 0 ? 'rgba(246,70,93,0.55)' : 'rgba(0,192,118,0.55)'));
+                drawBarsCanvas(ctx, osc, oscColors, minVal, maxVal, width, height, pad, 0);
+                drawLineSeriesCanvas(ctx, macd, '#f0b90b', minVal, maxVal, width, height, pad, 2);
+                drawLineSeriesCanvas(ctx, signal, '#3794ff', minVal, maxVal, width, height, pad, 2);
+            }
+        }
+
+        if (isChartEnabled('volume')) {
+            const vol = items.map(item => Number(item.volume ?? item.indicators?.volume));
+            const volMax = Math.max(...vol.filter(Number.isFinite), 1);
+            const colors = items.map(item => {
+                const openPrice = Number(item.open_price);
+                const closePrice = Number(item.close_price);
+                if (Number.isFinite(openPrice) && Number.isFinite(closePrice)) {
+                    if (closePrice > openPrice) return 'rgba(246,70,93,0.55)';
+                    if (closePrice < openPrice) return 'rgba(0,192,118,0.55)';
+                }
+                return 'rgba(132,142,156,0.45)';
+            });
+
+            const chart = setupCanvasChart('volumeRawChart', 200);
+            if (chart) {
+                const { ctx, width, height, pad } = chart;
+                drawChartGrid(ctx, width, height, pad);
+                drawAxisLabels(ctx, width, height, pad, 0, volMax);
+                drawBarsCanvas(ctx, vol, colors, 0, volMax, width, height, pad, 0);
+            }
+        }
+    }
+
+    function renderKlineChartCanvas(items) {
+        const chart = setupCanvasChart('klineChartContainer', 300);
+        if (!chart) return;
+        const { ctx, width, height, pad } = chart;
+
+        const data = items
+            .map(item => ({
+                open: Number(item.open_price),
+                high: Number(item.high_price),
+                low: Number(item.low_price),
+                close: Number(item.close_price),
+                maShort: Number(item.indicators?.ma_short),
+                maMid: Number(item.indicators?.ma_mid),
+                maLong: Number(item.indicators?.ma_long)
+            }))
+            .filter(item => Number.isFinite(item.open) && Number.isFinite(item.high) && Number.isFinite(item.low) && Number.isFinite(item.close));
+
+        if (!data.length) return;
+
+        const minPrice = Math.min(...data.map(d => d.low));
+        const maxPrice = Math.max(...data.map(d => d.high));
+        drawChartGrid(ctx, width, height, pad);
+        drawAxisLabels(ctx, width, height, pad, minPrice, maxPrice);
+
+        const plotW = width - pad.left - pad.right;
+        const stepX = data.length > 0 ? plotW / data.length : plotW;
+        const bodyW = Math.max(2, stepX * 0.58);
+
+        data.forEach((d, i) => {
+            const xCenter = pad.left + i * stepX + stepX / 2;
+            const yOpen = toY(d.open, minPrice, maxPrice, height, pad);
+            const yClose = toY(d.close, minPrice, maxPrice, height, pad);
+            const yHigh = toY(d.high, minPrice, maxPrice, height, pad);
+            const yLow = toY(d.low, minPrice, maxPrice, height, pad);
+            const up = d.close >= d.open;
+            const color = up ? '#00c076' : '#f6465d';
+
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(xCenter, yHigh);
+            ctx.lineTo(xCenter, yLow);
+            ctx.stroke();
+
+            ctx.fillStyle = color;
+            const top = Math.min(yOpen, yClose);
+            const bodyH = Math.max(1, Math.abs(yClose - yOpen));
+            ctx.fillRect(xCenter - bodyW / 2, top, bodyW, bodyH);
+        });
+
+        drawLineSeriesCanvas(ctx, data.map(d => d.maShort), '#f0b90b', minPrice, maxPrice, width, height, pad, 1.4);
+        drawLineSeriesCanvas(ctx, data.map(d => d.maMid), '#3794ff', minPrice, maxPrice, width, height, pad, 1.2);
+        drawLineSeriesCanvas(ctx, data.map(d => d.maLong), '#a970ff', minPrice, maxPrice, width, height, pad, 1.2);
+    }
+
+    function formatNum(value, digits = 2) {
+        const num = Number(value);
+        return Number.isFinite(num) ? num.toFixed(digits) : '--';
+    }
+
+    function calcSmaSeries(series, period) {
+        const result = [];
+        for (let i = 0; i < series.length; i++) {
+            if (i < period - 1) {
+                result.push(null);
+                continue;
+            }
+            let sum = 0;
+            let valid = true;
+            for (let j = i - period + 1; j <= i; j++) {
+                const val = Number(series[j]);
+                if (!Number.isFinite(val)) {
+                    valid = false;
+                    break;
+                }
+                sum += val;
+            }
+            result.push(valid ? sum / period : null);
+        }
+        return result;
+    }
+
+    function getMacdZeroToggle() {
+        return document.getElementById('s-macd-zero-toggle');
+    }
+
+    function getKdZeroToggle() {
+        return document.getElementById('s-kd-zero-toggle');
+    }
+
+    function getMacdZeroThreshold() {
+        if (typeof getMacdStrictConfig !== 'function') return 0;
+        const cfg = getMacdStrictConfig();
+        return Number(cfg?.thresholdPct) || 0;
+    }
+
+    function getKdZeroThreshold() {
+        if (typeof getKdStrictConfig !== 'function') return 0;
+        const cfg = getKdStrictConfig();
+        return Number(cfg?.thresholdPct) || 0;
+    }
+
+    function getMacdChangePct(data) {
+        const raw = Number(data?.metrics?.macd_change_pct);
+        return Number.isFinite(raw) ? Math.abs(raw) : null;
+    }
+
+    function getKdChangePct(data) {
+        const raw = Number(data?.metrics?.kd_change_pct);
+        return Number.isFinite(raw) ? Math.abs(raw) : null;
+    }
+
+    function isMacdZeroEligible(data) {
+        const threshold = getMacdZeroThreshold();
+        const changePct = getMacdChangePct(data);
+        return threshold > 0 && changePct !== null && changePct < threshold;
+    }
+
+    function isKdZeroEligible(data) {
+        const threshold = getKdZeroThreshold();
+        const changePct = getKdChangePct(data);
+        return threshold > 0 && changePct !== null && changePct < threshold;
+    }
+
+    function updateInstantScoreDisplay(data) {
+        const scores = data?.scores || {};
+        const maScore = Number(scores.MA);
+        const kdScore = Number(scores.KD);
+        const rsiScore = Number(scores.RSI);
+        const macdScore = Number(scores.MACD);
+        const volScore = Number(scores.Volume);
+        const totalScore = Number(scores.Total);
+        
+        const macdZeroApplied = !!getMacdZeroToggle()?.checked && isMacdZeroEligible(data);
+        const kdZeroApplied = !!getKdZeroToggle()?.checked && isKdZeroEligible(data);
+        
+        const displayMacd = macdZeroApplied && Number.isFinite(macdScore) ? 0 : macdScore;
+        const displayKd = kdZeroApplied && Number.isFinite(kdScore) ? 0 : kdScore;
+        
+        const displayTotal = Number.isFinite(totalScore)
+            ? totalScore - (Number.isFinite(macdScore) ? macdScore : 0) - (Number.isFinite(kdScore) ? kdScore : 0) + (Number.isFinite(displayMacd) ? displayMacd : 0) + (Number.isFinite(displayKd) ? displayKd : 0)
+            : totalScore;
+
+        document.getElementById('s-ma').innerText = Number.isFinite(maScore) ? maScore : '--';
+        document.getElementById('s-kd').innerText = Number.isFinite(displayKd) ? displayKd : '--';
+        document.getElementById('s-rsi').innerText = Number.isFinite(rsiScore) ? rsiScore : '--';
+        document.getElementById('s-macd').innerText = Number.isFinite(displayMacd) ? displayMacd : '--';
+        document.getElementById('s-vol').innerText = Number.isFinite(volScore) ? volScore : '--';
+        document.getElementById('s-total').innerText = Number.isFinite(displayTotal) ? displayTotal : '--';
+        setScoreReasons(data, { macdZeroApplied, kdZeroApplied });
+    }
+
+    function refreshMacdZeroOption() {
+        const wrap = document.getElementById('s-macd-zero-wrap');
+        const label = document.getElementById('s-macd-zero-text');
+        const toggle = getMacdZeroToggle();
+        if (!wrap || !label || !toggle) return;
+
+        if (!currentInstantStockData || !isMacdZeroEligible(currentInstantStockData)) {
+            wrap.style.display = 'none';
+            toggle.checked = false;
+            if (currentInstantStockData) updateInstantScoreDisplay(currentInstantStockData);
+            return;
+        }
+
+        const changePct = getMacdChangePct(currentInstantStockData);
+        const threshold = getMacdZeroThreshold();
+        label.innerText = `${formatNum(changePct, 2)}%，歸0`;
+        wrap.style.display = 'inline-flex';
+        updateInstantScoreDisplay(currentInstantStockData);
+    }
+
+    function refreshKdZeroOption() {
+        const wrap = document.getElementById('s-kd-zero-wrap');
+        const label = document.getElementById('s-kd-zero-text');
+        const toggle = getKdZeroToggle();
+        if (!wrap || !label || !toggle) return;
+
+        if (!currentInstantStockData || !isKdZeroEligible(currentInstantStockData)) {
+            wrap.style.display = 'none';
+            toggle.checked = false;
+            if (currentInstantStockData) updateInstantScoreDisplay(currentInstantStockData);
+            return;
+        }
+
+        const changePct = getKdChangePct(currentInstantStockData);
+        const threshold = getKdZeroThreshold();
+        label.innerText = `${formatNum(changePct, 2)}%，歸0`;
+        wrap.style.display = 'inline-flex';
+        updateInstantScoreDisplay(currentInstantStockData);
+    }
+
+    function setScoreReasons(data, options = {}) {
+        const indicators = data?.indicators || {};
+        const scores = data?.scores || {};
+        const metrics = data?.metrics || {};
+        const currentPrice = Number(data?.current_price);
+        const openPrice = Number(data?.open_price);
+        const maShort = Number(indicators.ma_short);
+        const maMid = Number(indicators.ma_mid);
+        const maLong = Number(indicators.ma_long);
+        const k = Number(indicators.k);
+        const d = Number(indicators.d);
+        const rsi5 = Number(indicators.rsi5);
+        const rsi10 = Number(indicators.rsi10);
+        const macd = Number(indicators.macd);
+        const signal = Number(indicators.signal);
+        const osc = Number(indicators.osc);
+        const volume = Number(indicators.volume);
+        const macdChangePct = Number(metrics.macd_change_pct);
+        const zeroApplied = !!options.zeroApplied;
+
+        let maReason = '均線資料不足';
+        if ([maShort, maMid, maLong].every(Number.isFinite)) {
+            if (scores.MA > 0) {
+                maReason = `MA5 ${formatNum(maShort)} > MA10 ${formatNum(maMid)} > MA20 ${formatNum(maLong)}`;
+            } else if (scores.MA < 0) {
+                maReason = `MA5 ${formatNum(maShort)} < MA10 ${formatNum(maMid)} < MA20 ${formatNum(maLong)}`;
+            } else {
+                maReason = '無排列';
+            }
+        }
+
+        let kdReason = 'KD資料不足';
+        if (Number.isFinite(k) && Number.isFinite(d)) {
+            kdReason = `K ${formatNum(k)} ${k >= d ? '>=' : '<'} D ${formatNum(d)}`;
+        }
+
+        let rsiReason = 'RSI資料不足';
+        if (Number.isFinite(rsi5) && Number.isFinite(rsi10)) {
+            rsiReason = `RSI5 ${formatNum(rsi5)} ${rsi5 >= rsi10 ? '>=' : '<'} RSI10 ${formatNum(rsi10)}`;
+        }
+
+        let macdReason = 'MACD資料不足';
+        if (Number.isFinite(osc)) {
+            macdReason = `柱 ${osc >= 0 ? '+' : ''}${formatNum(osc, 4)}`;
+            if (Number.isFinite(macdChangePct)) {
+                macdReason += `，變化 ${formatNum(Math.abs(macdChangePct), 2)}%`;
+            }
+            if (zeroApplied) {
+                macdReason += '，已手動歸 0';
+            }
+        }
+
+        let volReason = '量能資料不足';
+        if (Number.isFinite(volume)) {
+            const candleText = Number.isFinite(currentPrice) && Number.isFinite(openPrice) ? (currentPrice >= openPrice ? '紅K' : '黑K') : 'K棒';
+            volReason = `${candleText}，量 ${Math.round(volume).toLocaleString()}`;
+        }
+
+        document.getElementById('s-ma-reason').innerText = maReason;
+        document.getElementById('s-kd-reason').innerText = kdReason;
+        document.getElementById('s-rsi-reason').innerText = rsiReason;
+        document.getElementById('s-macd-reason').innerText = macdReason;
+        document.getElementById('s-vol-reason').innerText = volReason;
+    }
+
+    function ensureLightweightChartsLoaded() {
+        if (window.LightweightCharts) return Promise.resolve();
+        if (window.__lwChartLoadingPromise) return window.__lwChartLoadingPromise;
+
+        window.__lwChartLoadingPromise = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            // 固定到 v4，避免最新版 API 變動造成 addCandlestickSeries 失效。
+            script.src = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('無法載入 Lightweight Charts')); 
+            document.head.appendChild(script);
+        });
+        return window.__lwChartLoadingPromise;
+    }
+
+    function addCandlestickSeriesCompat(chart) {
+        if (typeof chart.addCandlestickSeries === 'function') {
+            return chart.addCandlestickSeries({
+                upColor: '#00c076',
+                downColor: '#f6465d',
+                borderVisible: true,
+                wickUpColor: '#00c076',
+                wickDownColor: '#f6465d'
+            });
+        }
+        if (typeof chart.addSeries === 'function' && window.LightweightCharts?.CandlestickSeries) {
+            return chart.addSeries(window.LightweightCharts.CandlestickSeries, {
+                upColor: '#00c076',
+                downColor: '#f6465d',
+                borderVisible: true,
+                wickUpColor: '#00c076',
+                wickDownColor: '#f6465d'
+            });
+        }
+        throw new Error('不支援的 Lightweight Charts 版本（無法建立 K 線）');
+    }
+
+    function addLineSeriesCompat(chart, options) {
+        if (typeof chart.addLineSeries === 'function') {
+            return chart.addLineSeries(options);
+        }
+        if (typeof chart.addSeries === 'function' && window.LightweightCharts?.LineSeries) {
+            return chart.addSeries(window.LightweightCharts.LineSeries, options);
+        }
+        throw new Error('不支援的 Lightweight Charts 版本（無法建立 MA 線）');
+    }
+
+    function addHistogramSeriesCompat(chart, options) {
+        if (typeof chart.addHistogramSeries === 'function') {
+            return chart.addHistogramSeries(options);
+        }
+        if (typeof chart.addSeries === 'function' && window.LightweightCharts?.HistogramSeries) {
+            return chart.addSeries(window.LightweightCharts.HistogramSeries, options);
+        }
+        throw new Error('不支援的 Lightweight Charts 版本（無法建立柱狀圖）');
+    }
+
+    function createLightweightChart(containerId, height, minMaxRange = null) {
+        const container = document.getElementById(containerId);
+        if (!container) return null;
+
+        const width = Math.max(container.clientWidth, 620);
+        const chart = LightweightCharts.createChart(container, {
+            width,
+            height,
+            layout: { background: { color: '#0b0e11' }, textColor: '#848e9c' },
+            grid: { vertLines: { color: '#1a1f25' }, horzLines: { color: '#1a1f25' } },
+            rightPriceScale: {
+                borderColor: '#2b2f36',
+                scaleMargins: { top: 0.1, bottom: 0.1 },
+                autoScale: minMaxRange == null
+            },
+            timeScale: { borderColor: '#2b2f36', timeVisible: true, secondsVisible: false }
+        });
+
+        if (minMaxRange && chart.priceScale) {
+            const priceScale = chart.priceScale('right');
+            if (priceScale && typeof priceScale.applyOptions === 'function') {
+                priceScale.applyOptions({
+                    autoScale: false,
+                    mode: 0,
+                    minimum: minMaxRange.min,
+                    maximum: minMaxRange.max
+                });
+            }
+        }
+        return chart;
+    }
+
+    async function renderRawTechnicalCharts(items, timeframe = '1d') {
+        if (FORCE_CUSTOM_CANVAS_CHARTS) {
+            renderRawTechnicalChartsCanvas(items);
+            return;
+        }
+
+        try {
+            await ensureLightweightChartsLoaded();
+        } catch (err) {
+            renderRawTechnicalChartsCanvas(items);
+            return;
+        }
+
+        if (kdRsiChartInstance) kdRsiChartInstance.remove();
+        if (macdChartInstance) macdChartInstance.remove();
+        if (volumeChartInstance) volumeChartInstance.remove();
+        kdRsiChartInstance = null;
+        macdChartInstance = null;
+        volumeChartInstance = null;
+
+        const kdRsiData = items.map(item => ({
+            time: parseChartTime(item.date, timeframe),
+            k: Number(item.indicators?.k),
+            d: Number(item.indicators?.d),
+            rsi5: Number(item.indicators?.rsi5),
+            rsi10: Number(item.indicators?.rsi10)
+        })).filter(item => item.time);
+
+        if (isChartEnabled('kd') || isChartEnabled('rsi')) {
+            kdRsiChartInstance = createLightweightChart('kdRsiRawChart', 240, { min: 0, max: 100 });
+            if (kdRsiChartInstance) {
+                if (isChartEnabled('kd')) {
+                    const kLine = addLineSeriesCompat(kdRsiChartInstance, { color: '#00d1b2', lineWidth: 2, priceLineVisible: false });
+                    const dLine = addLineSeriesCompat(kdRsiChartInstance, { color: '#3794ff', lineWidth: 2, priceLineVisible: false });
+                    kLine.setData(sortSeriesByTime(kdRsiData.filter(item => Number.isFinite(item.k)).map(item => ({ time: item.time, value: item.k }))));
+                    dLine.setData(sortSeriesByTime(kdRsiData.filter(item => Number.isFinite(item.d)).map(item => ({ time: item.time, value: item.d }))));
+                }
+                if (isChartEnabled('rsi')) {
+                    const rsi5Line = addLineSeriesCompat(kdRsiChartInstance, { color: '#f0b90b', lineWidth: 2, priceLineVisible: false });
+                    const rsi10Line = addLineSeriesCompat(kdRsiChartInstance, { color: '#ff7f50', lineWidth: 2, priceLineVisible: false });
+                    rsi5Line.setData(sortSeriesByTime(kdRsiData.filter(item => Number.isFinite(item.rsi5)).map(item => ({ time: item.time, value: item.rsi5 }))));
+                    rsi10Line.setData(sortSeriesByTime(kdRsiData.filter(item => Number.isFinite(item.rsi10)).map(item => ({ time: item.time, value: item.rsi10 }))));
+                }
+                kdRsiChartInstance.timeScale().fitContent();
+            }
+        }
+
+        if (isChartEnabled('macd')) {
+            const macdData = items.map(item => ({
+                time: parseChartTime(item.date, timeframe),
+                macd: Number(item.indicators?.macd),
+                signal: Number(item.indicators?.signal),
+                osc: Number(item.indicators?.osc)
+            })).filter(item => item.time);
+
+            macdChartInstance = createLightweightChart('macdRawChart', 240);
+            if (macdChartInstance) {
+                const oscSeries = addHistogramSeriesCompat(macdChartInstance, { priceLineVisible: false, base: 0 });
+                const difSeries = addLineSeriesCompat(macdChartInstance, { color: '#f0b90b', lineWidth: 2, priceLineVisible: false });
+                const deaSeries = addLineSeriesCompat(macdChartInstance, { color: '#3794ff', lineWidth: 2, priceLineVisible: false });
+
+                oscSeries.setData(sortSeriesByTime(macdData.filter(item => Number.isFinite(item.osc)).map(item => ({
+                    time: item.time,
+                    value: item.osc,
+                    color: item.osc >= 0 ? 'rgba(246,70,93,0.55)' : 'rgba(0,192,118,0.55)'
+                }))));
+                difSeries.setData(sortSeriesByTime(macdData.filter(item => Number.isFinite(item.macd)).map(item => ({ time: item.time, value: item.macd }))));
+                deaSeries.setData(sortSeriesByTime(macdData.filter(item => Number.isFinite(item.signal)).map(item => ({ time: item.time, value: item.signal }))));
+                macdChartInstance.timeScale().fitContent();
+            }
+        }
+
+        if (isChartEnabled('volume')) {
+            const volumeData = items.map(item => {
+                const openPrice = Number(item.open_price);
+                const closePrice = Number(item.close_price);
+                const value = Number(item.volume ?? item.indicators?.volume);
+                if (!Number.isFinite(value)) return null;
+
+                let color = 'rgba(132,142,156,0.45)';
+                if (Number.isFinite(openPrice) && Number.isFinite(closePrice)) {
+                    if (closePrice > openPrice) color = 'rgba(246,70,93,0.55)';
+                    else if (closePrice < openPrice) color = 'rgba(0,192,118,0.55)';
+                }
+
+                return {
+                    time: parseChartTime(item.date, timeframe),
+                    value,
+                    color
+                };
+            }).filter(item => item && item.time);
+
+            volumeChartInstance = createLightweightChart('volumeRawChart', 200);
+            if (volumeChartInstance) {
+                const volSeries = addHistogramSeriesCompat(volumeChartInstance, { priceLineVisible: false });
+                volSeries.setData(sortSeriesByTime(volumeData));
+                volumeChartInstance.timeScale().fitContent();
+            }
+        }
+    }
+
+    async function renderKlineChart(items, timeframe = '1d') {
+        const container = document.getElementById('klineChartContainer');
+        if (!container) return;
+
+        if (FORCE_CUSTOM_CANVAS_CHARTS) {
+            renderKlineChartCanvas(items);
+            return;
+        }
+
+        try {
+            await ensureLightweightChartsLoaded();
+        } catch (err) {
+            renderKlineChartCanvas(items);
+            return;
+        }
+
+        const candleData = items
+            .map(item => ({
+                time: parseChartTime(item.date, timeframe),
+                open: Number(item.open_price),
+                high: Number(item.high_price),
+                low: Number(item.low_price),
+                close: Number(item.close_price)
+            }))
+            .filter(item => item.time && Number.isFinite(item.open) && Number.isFinite(item.high) && Number.isFinite(item.low) && Number.isFinite(item.close));
+
+        if (!candleData.length) {
+            container.innerHTML = '<div style="padding:12px; color:#848e9c;">無K線資料可顯示</div>';
+            return;
+        }
+
+        container.innerHTML = '';
+        if (klineChartInstance) {
+            klineChartInstance.remove();
+            klineChartInstance = null;
+            klineSeries = null;
+        }
+
+        const width = Math.max(container.clientWidth, 620);
+        klineChartInstance = LightweightCharts.createChart(container, {
+            width,
+            height: 300,
+            layout: { background: { color: '#0b0e11' }, textColor: '#848e9c' },
+            grid: { vertLines: { color: '#1a1f25' }, horzLines: { color: '#1a1f25' } },
+            rightPriceScale: { borderColor: '#2b2f36' },
+            timeScale: {
+                borderColor: '#2b2f36',
+                timeVisible: true,
+                secondsVisible: false,
+                timeFormatter: (utcTimestamp) => {
+                    const date = new Date(utcTimestamp * 1000);
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const hours = String(date.getHours()).padStart(2, '0');
+                    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+                    if (timeframe === '5m' || timeframe === '10m') {
+                        return `${hours}:${minutes}`;
+                    } else if (timeframe === '1h' || timeframe === '15m' || timeframe === '30m') {
+                        return `${hours}:00`;
+                    } else if (timeframe === '1d') {
+                        return `${month}-${day}`;
+                    } else if (timeframe === '1wk' || timeframe === 'weekly' || timeframe === 'weekly-old') {
+                        return `${month}-${day}`;
+                    } else if (timeframe === '1mo' || timeframe === 'monthly') {
+                        return `${year}-${month}`;
+                    } else {
+                        return `${month}-${day}`;
+                    }
+                }
+            }
+        });
+
+        try {
+            klineSeries = addCandlestickSeriesCompat(klineChartInstance);
+            maShortSeries = addLineSeriesCompat(klineChartInstance, { color: '#f0b90b', lineWidth: 1.5, priceLineVisible: false });
+            maMidSeries = addLineSeriesCompat(klineChartInstance, { color: '#3794ff', lineWidth: 1.2, priceLineVisible: false });
+            maLongSeries = addLineSeriesCompat(klineChartInstance, { color: '#a970ff', lineWidth: 1.2, priceLineVisible: false });
+        } catch (err) {
+            container.innerHTML = `<div style="padding:12px; color:#ff6b6b;">${err.message}</div>`;
+            return;
+        }
+
+        klineSeries.setData(sortSeriesByTime(candleData));
+
+        const maShortData = items
+            .map(item => ({ time: parseChartTime(item.date, timeframe), value: Number(item.indicators?.ma_short) }))
+            .filter(item => item.time && Number.isFinite(item.value));
+        const maMidData = items
+            .map(item => ({ time: parseChartTime(item.date, timeframe), value: Number(item.indicators?.ma_mid) }))
+            .filter(item => item.time && Number.isFinite(item.value));
+        const maLongData = items
+            .map(item => ({ time: parseChartTime(item.date, timeframe), value: Number(item.indicators?.ma_long) }))
+            .filter(item => item.time && Number.isFinite(item.value));
+
+        maShortSeries.setData(sortSeriesByTime(maShortData));
+        maMidSeries.setData(sortSeriesByTime(maMidData));
+        maLongSeries.setData(sortSeriesByTime(maLongData));
+
+        klineChartInstance.timeScale().fitContent();
+    }
+
+    function renderTrendChart(symbol, timeframe) {
+        const scoreTimeframe = '1d';
+        Promise.all([
+            fetch(`/api/tools/history/${symbol}?timeframe=${scoreTimeframe}`).then(res => res.json()),
+            fetch(`/api/tools/history-detail/${symbol}?timeframe=${timeframe}&limit=120`).then(res => res.json())
+        ])
+        .then(async ([scoreData, detailPayload]) => {
+            const scoreItems = Array.isArray(scoreData) ? scoreData : [];
+            const detailItems = detailPayload?.data || [];
+            if (!scoreItems.length && !detailItems.length) return;
+
+            // 15日分數固定使用自繪（不受 Lightweight 成敗影響）
+            if (trendChartInstance) {
+                trendChartInstance.remove();
+                trendChartInstance = null;
+            }
+            if (scoreItems.length && isChartEnabled('score')) {
+                renderScoreChartCanvas(scoreItems);
+            }
+
+            if (FORCE_CUSTOM_CANVAS_CHARTS) {
+                if (detailItems.length) {
+                    await renderRawTechnicalCharts(detailItems, timeframe);
+                    if (isChartEnabled('kline')) {
+                        await renderKlineChart(detailItems, timeframe);
+                    }
+                }
+                return;
+            }
+
+            try {
+                await ensureLightweightChartsLoaded();
+            } catch (err) {
+                if (detailItems.length) {
+                    await renderRawTechnicalCharts(detailItems, timeframe);
+                    if (isChartEnabled('kline')) {
+                        await renderKlineChart(detailItems, timeframe);
+                    }
+                }
+                return;
+            }
+
+            if (detailItems.length) {
+                await renderRawTechnicalCharts(detailItems, timeframe);
+                if (isChartEnabled('kline')) {
+                    await renderKlineChart(detailItems, timeframe);
+                } else if (klineChartInstance) {
+                    klineChartInstance.remove();
+                    klineChartInstance = null;
+                    klineSeries = null;
+                }
+            }
+        }).catch(err => console.error("繪圖失敗:", err));
+    }
+
+    function getCheckedValuesInGroup(groupId) {
+        return Array.from(document.querySelectorAll(`#${groupId} input[type=checkbox]:checked`)).map(cb => cb.value);
+    }
+
+    async function runSingleStockBacktest() {
+        if (!currentSymbol) {
+            alert('請先搜尋並選擇個股後再執行回測。');
+            return;
+        }
+
+        const placeholder = document.getElementById('s-bt-result-placeholder');
+        const panel = document.getElementById('s-bt-result-panel');
+        const buyScores = getCheckedValuesInGroup('s-bt-buy-score');
+        const sellScores = getCheckedValuesInGroup('s-bt-sell-score');
+
+        if (buyScores.length === 0 || sellScores.length === 0) {
+            alert('請至少選擇一個買入分數與一個賣出分數。');
+            return;
+        }
+
+        const payload = {
+            symbols: [currentSymbol],
+            capital: document.getElementById('s-bt-capital').value,
+            unit: document.getElementById('s-bt-unit').value,
+            start: document.getElementById('s-bt-start').value,
+            end: document.getElementById('s-bt-end').value,
+            level: document.getElementById('s-bt-level').value,
+            fee: document.getElementById('s-bt-fee').value,
+            tax: document.getElementById('s-bt-tax').value,
+            buy_scores: buyScores,
+            sell_scores: sellScores
+        };
+
+        placeholder.style.display = 'block';
+        panel.style.display = 'none';
+        placeholder.innerText = '⌛ 執行個股回測中...';
+
+        try {
+            const res = await fetch('/api/backtest/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+            if (!res.ok || data.error) {
+                throw new Error(data.error || `伺服器錯誤狀態碼: ${res.status}`);
+            }
+
+            const results = Array.isArray(data.results) ? data.results : [];
+            if (results.length === 0) {
+                placeholder.innerText = '⚠️ 此條件下無可用回測結果，請調整級別或時間範圍再試。';
+                return;
+            }
+
+            singleBacktestCache = results[0];
+            renderSingleBacktestReport();
+            placeholder.style.display = 'none';
+            panel.style.display = 'block';
+        } catch (e) {
+            placeholder.innerText = `❌ 回測失敗: ${e.message}`;
+        }
+    }
+
+    function renderSingleBacktestReport() {
+        const tbody = document.getElementById('s-bt-summary-body');
+        const strategySelect = document.getElementById('s-bt-trade-strategy');
+        const strategies = singleBacktestCache?.strategies || {};
+        const keys = Object.keys(strategies);
+
+        tbody.innerHTML = keys.map(k => {
+            const st = strategies[k] || {};
+            const roi = Number(st.roi || 0);
+            const balance = Number(st.balance || 0).toLocaleString();
+            return `<tr>
+                <td>${k} 分進場</td>
+                <td style="text-align:center; color:${roi >= 0 ? '#00f2a1' : '#ff3b6a'}; font-weight:bold;">${roi}%</td>
+                <td style="text-align:center;">${st.trade_count || 0}</td>
+                <td style="text-align:center;">$${balance}</td>
+            </tr>`;
+        }).join('');
+
+        strategySelect.innerHTML = keys.map(k => `<option value="${k}">${k} 分進場策略</option>`).join('');
+        renderSingleTradeLog();
+    }
+
+    function renderSingleTradeLog() {
+        const tbody = document.getElementById('s-bt-trade-body');
+        const strategy = document.getElementById('s-bt-trade-strategy').value;
+        const trades = singleBacktestCache?.strategies?.[strategy]?.trades || [];
+
+        tbody.innerHTML = trades.length ? trades.map(t => `
+            <tr>
+                <td>${t.time}</td>
+                <td style="color:${t.action === 'BUY' ? '#3794ff' : '#f0b90b'}">${t.action}</td>
+                <td>$${t.price}</td>
+                <td>$${(t.cost || 0).toLocaleString()}</td>
+                <td>$${(t.balance || 0).toLocaleString()}</td>
+                <td style="text-align:right;">${t.pnl_pct}%</td>
+            </tr>
+        `).join('') : '<tr><td colspan="6" style="text-align:center; color:var(--dim);">無交易紀錄</td></tr>';
+    }
+</script>

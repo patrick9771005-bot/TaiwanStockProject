@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登入 - 金融決策指揮中心</title>
+    <style>
+        :root {
+            --bg: #0b0e11;
+            --card: #151a21;
+            --primary: #3794ff;
+            --danger: #ff3b6a;
+            --text: #f0f0f0;
+            --dim: #848e9c;
+        }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at 20% 20%, #1b2330 0%, #0b0e11 55%);
+            color: var(--text);
+            font-family: "Microsoft JhengHei", sans-serif;
+        }
+        .auth-wrap {
+            width: min(1280px, 95vw);
+        }
+        .auth-card {
+            background: var(--card);
+            border: 1px solid #2b2f36;
+            border-radius: 12px;
+            padding: 24px;
+        }
+        h1 {
+            margin: 0 0 18px;
+            font-size: 1.6rem;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+        .brand-logo {
+            width: 48px;
+            height: 48px;
+            border-radius: 10px;
+            object-fit: cover;
+            border: 1px solid #2b2f36;
+            background: #0f141b;
+        }
+        .tabs {
+            display: flex;
+            align-items: center;
+            gap: 22px;
+            border-bottom: 1px solid #2b2f36;
+            margin-bottom: 26px;
+        }
+        .tab-btn {
+            border: 0;
+            background: transparent;
+            color: var(--dim);
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            padding: 12px 0;
+            border-bottom: 3px solid transparent;
+        }
+        .tab-btn.active {
+            color: #ff5f5f;
+            border-bottom-color: #ff5f5f;
+        }
+        .form-panel {
+            display: none;
+        }
+        .form-panel.active {
+            display: block;
+        }
+        .row { margin-bottom: 12px; }
+        label {
+            display: block;
+            color: var(--dim);
+            margin-bottom: 6px;
+            font-size: 0.86rem;
+        }
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #2b2f36;
+            border-radius: 8px;
+            background: #0f141b;
+            color: #fff;
+            padding: 10px 12px;
+        }
+        button {
+            width: 100%;
+            margin-top: 8px;
+            border: 0;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .btn-login { background: #111828; border: 1px solid #2d3a4f; color: #fff; }
+        .btn-register { background: #f0b90b; color: #111; }
+        .error {
+            background: rgba(255, 59, 106, 0.12);
+            color: #ff94ac;
+            border: 1px solid rgba(255, 59, 106, 0.35);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 14px;
+            font-size: 0.9rem;
+        }
+        .notice {
+            background: rgba(240, 185, 11, 0.12);
+            color: #ffd26a;
+            border: 1px solid rgba(240, 185, 11, 0.35);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 14px;
+            font-size: 0.88rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-wrap">
+        <div class="auth-card">
+            <div class="brand">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" class="brand-logo" onerror="this.style.display='none'">
+                <h1 style="margin:0;">台股監測</h1>
+            </div>
+            <div class="tabs">
+                <button id="tab-login" class="tab-btn" type="button" onclick="switchTab('login')">👉 登入</button>
+                <button id="tab-register" class="tab-btn" type="button" onclick="switchTab('register')">📝 註冊新帳號</button>
+            </div>
+
+            {% if error %}<div class="error">{{ error }}</div>{% endif %}
+            <div class="notice">⚠️ 若超過 30 天未登入，系統將自動刪除您的帳號與清單資料。</div>
+
+            <form id="panel-login" class="form-panel" method="post" action="/api/auth/login">
+                <div class="row">
+                    <label for="login-username">帳號</label>
+                    <input id="login-username" type="text" name="username" pattern="[A-Za-z0-9]+" title="帳號僅限英文與數字" required>
+                </div>
+                <div class="row">
+                    <label for="login-password">密碼</label>
+                    <input id="login-password" type="password" name="password" pattern="[!-~]+" title="僅限半形英文、數字、符號" required>
+                </div>
+                <button type="submit" class="btn-login">登入系統</button>
+            </form>
+
+            <form id="panel-register" class="form-panel" method="post" action="/api/auth/register">
+                <div class="row">
+                    <label for="reg-username">帳號（僅限英文與數字，不分大小寫）</label>
+                    <input id="reg-username" type="text" name="username" pattern="[A-Za-z0-9]+" title="僅限英文與數字" required>
+                </div>
+                <div class="row">
+                    <label for="reg-password">密碼（至少6碼）</label>
+                    <input id="reg-password" type="password" name="password" pattern="[!-~]+" title="僅限半形英文、數字、符號" required>
+                </div>
+                <div class="row">
+                    <label for="reg-confirm">確認密碼</label>
+                    <input id="reg-confirm" type="password" name="confirm_password" pattern="[!-~]+" title="僅限半形英文、數字、符號" required>
+                </div>
+                <button type="submit" class="btn-register">建立帳號並登入</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tab) {
+            const isLogin = tab === 'login';
+            document.getElementById('tab-login').classList.toggle('active', isLogin);
+            document.getElementById('tab-register').classList.toggle('active', !isLogin);
+            document.getElementById('panel-login').classList.toggle('active', isLogin);
+            document.getElementById('panel-register').classList.toggle('active', !isLogin);
+        }
+
+        switchTab('{{ active_tab or "login" }}');
+    </script>
+</body>
+</html>

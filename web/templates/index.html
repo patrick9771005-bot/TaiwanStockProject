@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🦊 THE FOX</title>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <style>
+        /* ================= [基礎設定與全域變數] ================= */
+        :root { --bg: #0b0e11; --card: #151a21; --primary: #3794ff; --success: #00f2a1; --danger: #ff3b6a; --text: #f0f0f0; --dim: #848e9c; }
+        body { font-family: 'Inter', 'Microsoft JhengHei', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; overflow: hidden; }
+
+        /* ================= [左側分頁欄 Sidebar] ================= */
+        #sidebar { width: 260px; background: var(--card); border-right: 1px solid #2b2f36; padding: 20px; display: flex; flex-direction: column; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); flex-shrink: 0; z-index: 100; position: relative; }
+        #sidebar.collapsed { width: 0; padding-left: 0; padding-right: 0; overflow: hidden; border-right: none; }
+        
+        .sidebar-top { margin-bottom: 25px; }
+        .watchlist-container { flex: 1; overflow-y: auto; margin-top: 10px; }
+        .sidebar-footer { padding-top: 15px; border-top: 1px solid #2b2f36; margin-top: auto; position: relative; }
+
+        /* 側邊欄按鈕與輸入框 */
+        .search-box { width: 100%; padding: 10px; background: #1e2329; border: 1px solid #333; color: #fff; border-radius: 6px; box-sizing: border-box; }
+        .search-btn { background: var(--primary); color: #fff; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 8px; width: 100%; }
+        .watchlist-item { padding: 12px; border-bottom: 1px solid #222; display: flex; justify-content: space-between; cursor: pointer; border-radius: 4px; font-size: 0.9em; color: var(--dim); }
+        .watchlist-item:hover { background: #21262c; color: var(--primary); }
+        .drag-handle { color: #6b7380; font-size: 1.05em; cursor: grab; user-select: none; padding: 0 2px; }
+        .watchlist-item.sortable-chosen { background: #20252c; }
+        .watchlist-item.sortable-ghost { opacity: 0.35; }
+        .danger-link { color: var(--danger); font-size: 0.8em; cursor: pointer; opacity: 0.6; text-decoration: none; display: block; margin-bottom: 8px; }
+        .danger-link:hover { opacity: 1; }
+        .settings-toggle {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: #111827;
+            color: #d7deea;
+            border: 1px solid #2b2f36;
+            border-radius: 8px;
+            padding: 10px 12px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        .settings-panel {
+            display: none;
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: calc(100% + 10px);
+            max-height: min(420px, 55vh);
+            overflow-y: auto;
+            padding-right: 2px;
+            z-index: 20;
+        }
+        .settings-panel.show { display: block; }
+        .settings-card {
+            background: #10151d;
+            border: 1px solid #2b2f36;
+            border-radius: 10px;
+            padding: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+        .settings-card + .settings-card {
+            margin-top: 10px;
+        }
+        .settings-save-btn {
+            width: 100%;
+            border: 0;
+            border-radius: 8px;
+            padding: 9px 12px;
+            margin-top: 10px;
+            background: #3794ff;
+            color: #fff;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .settings-save-msg {
+            min-height: 18px;
+            margin-top: 8px;
+            color: #8fd3ff;
+            font-size: 0.78em;
+            text-align: center;
+        }
+
+        /* ================= [主畫面殼層 Main Content Shell] ================= */
+        #main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .nav-header { background: var(--card); padding: 0 20px; border-bottom: 1px solid #2b2f36; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+        
+        /* 分頁標籤切換框架 */
+        .tab-btn { padding: 18px 20px; cursor: pointer; background: none; border: none; color: var(--dim); border-bottom: 3px solid transparent; font-size: 0.95em; transition: 0.2s; }
+        .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: bold; }
+        
+        .content-scroll { flex: 1; overflow-y: auto; padding: 20px; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .modal-mask {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .modal-mask.show { display: flex; }
+        .modal-card {
+            width: min(440px, 92vw);
+            background: #141a22;
+            border: 1px solid #2b2f36;
+            border-radius: 10px;
+            padding: 18px;
+        }
+        .modal-title {
+            font-size: 1.05em;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #ffb4c4;
+        }
+        .modal-desc {
+            color: var(--dim);
+            font-size: 0.88em;
+            line-height: 1.45;
+            margin-bottom: 12px;
+        }
+        .modal-input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #2b2f36;
+            background: #0b0e11;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+        .modal-msg {
+            min-height: 18px;
+            font-size: 0.85em;
+            color: #ff9bb1;
+            margin-bottom: 10px;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .btn-lite {
+            border: 1px solid #384153;
+            background: #111827;
+            color: #d0d7e5;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .btn-danger {
+            border: 0;
+            background: #c2355d;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<!-- 1. 左側分頁欄 (Sidebar) -->
+<div id="sidebar">
+    <!-- 側邊欄搜尋區塊 -->
+    <div style="margin-bottom: 25px;">
+        <!-- 綁定鍵盤：按下 Enter 鍵就會觸發搜尋 -->
+        <input type="text" id="sidebar-search" placeholder="輸入代號 (例: 2330)" 
+            onkeypress="if(event.key === 'Enter') executeSearch()" 
+            style="background: #0b0e11; border: 1px solid #2b2f36; color: #fff; padding: 10px; width: 100%; border-radius: 6px; box-sizing: border-box; margin-bottom: 10px; font-size: 1em;">
+        
+        <!-- 綁定滑鼠：點擊按鈕就會觸發搜尋 -->
+        <button onclick="executeSearch()" style="width: 100%; background: #3794ff; color: #fff; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1em; transition: 0.2s;">
+            🔍 搜尋個股
+        </button>
+    </div>
+
+    <!-- 檢查這裡！門牌號碼一定要叫 watchlist-container -->
+    <div id="watchlist-container">
+        <div class="loading-text">載入中...</div>
+    </div>
+
+    <div class="sidebar-footer">
+        <div style="color: var(--dim); font-size: 0.8em; margin-bottom: 10px;">👤 {{ username or '使用者' }}</div>
+        <a href="#" class="danger-link" onclick="return logoutAccount()">登出目前帳號</a>
+        <button class="settings-toggle" onclick="return toggleSettingsMenu()">⚙️ 設定</button>
+        <div id="settings-panel" class="settings-panel">
+            <div class="settings-card">
+                <div style="font-size:0.82em; color:#fff; font-weight:bold; margin-bottom:8px;">MACD 嚴格版設定</div>
+                <div style="color:var(--dim); font-size:0.74em; line-height:1.45; margin-bottom:10px;">自選清單掃描與權值50使用嚴格版（直接判斷 OSC 差值正負）。即時大盤個股可在卡片上勾選『低於閾值時歸 0』來套用此設定。</div>
+                <div style="margin-bottom:10px;">
+                    <label for="macd-strict-threshold-pct" style="display:block; color:var(--dim); font-size:0.74em; margin-bottom:6px;">變化量低於幾 %</label>
+                    <input id="macd-strict-threshold-pct" type="number" min="0" step="0.01" value="0" style="width:100%; box-sizing:border-box; background:#0b0e11; border:1px solid #2b2f36; color:#fff; padding:8px 10px; border-radius:8px;">
+                </div>
+                <button class="settings-save-btn" onclick="return applyMacdSettings()">套用 MACD 設定</button>
+                <div id="macd-settings-msg" class="settings-save-msg"></div>
+            </div>
+            <div class="settings-card">
+                <div style="font-size:0.82em; color:#fff; font-weight:bold; margin-bottom:8px;">KD 嚴格版設定</div>
+                <div style="color:var(--dim); font-size:0.74em; line-height:1.45; margin-bottom:10px;">自選清單掃描與權值50使用嚴格版（直接判斷上方間隙變化正負）。即時大盤個股可在卡片上勾選『低於閾值時歸 0』來套用此設定。</div>
+                <div style="margin-bottom:10px;">
+                    <label for="kd-strict-threshold-pct" style="display:block; color:var(--dim); font-size:0.74em; margin-bottom:6px;">變化量低於幾 %</label>
+                    <input id="kd-strict-threshold-pct" type="number" min="0" step="0.01" value="0" style="width:100%; box-sizing:border-box; background:#0b0e11; border:1px solid #2b2f36; color:#fff; padding:8px 10px; border-radius:8px;">
+                </div>
+                <button class="settings-save-btn" onclick="return applyKdSettings()">套用 KD 設定</button>
+                <div id="kd-settings-msg" class="settings-save-msg"></div>
+            </div>
+            <div class="settings-card">
+                <div style="font-size:0.82em; color:#fff; font-weight:bold; margin-bottom:8px;">帳號操作</div>
+                <button onclick="return openAdjustmentHistoryModal()" style="width:100%; padding:10px; background:#7c3aed; color:#fff; border:none; border-radius:6px; font-weight:bold; margin-bottom:8px; cursor:pointer; font-size:0.85em;">📋 調整記錄</button>
+                <div style="display:flex; gap:8px; margin-bottom:8px;">
+                    <button onclick="return downloadBackup()" style="flex:1; padding:8px; background:#00f2a1; color:#000; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.85em;">📥 下載</button>
+                    <label for="backup-upload-input" style="flex:1; padding:8px; background:#3794ff; color:#fff; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.85em; display:flex; align-items:center; justify-content:center; text-decoration:none;">📤 上傳</label>
+                    <input id="backup-upload-input" type="file" accept=".zip,.json" style="display:none;" onchange="uploadBackup(this)">
+                </div>
+                <button onclick="return openDeleteAccountModal()" style="width:100%; padding:10px; background:#ff3b6a; color:#fff; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.85em;">🗑️ 註銷/刪除帳號</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. 主框架 (Main Container) -->
+<div id="main-content">
+    <div class="nav-header">
+        <div style="display: flex; align-items: center;">
+            <!-- 收折按鈕 -->
+            <button onclick="toggleSidebar()" style="background:none; border:none; color:var(--dim); font-size:1.5em; cursor:pointer; margin-right:15px;">☰</button>
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" style="width:28px; height:28px; border-radius:6px; object-fit:cover; margin-right:10px; border:1px solid #2b2f36;" onerror="this.style.display='none'">
+            
+            <!-- 分頁標籤框架 -->
+            <button class="tab-btn active" onclick="switchTab(1)">即時大盤個股</button>
+            <button class="tab-btn" onclick="switchTab(2)">自選清單掃描</button>
+            <button class="tab-btn" onclick="switchTab(3)">權值50</button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.3em;">🦊</span>
+            <div style="font-size: 0.85em; color: var(--dim);">THE FOX</div>
+        </div>
+    </div>
+
+    <!-- 內容滾動區：各頁面內容將注入此處 -->
+    <div class="content-scroll">
+        <div id="tab-1" class="tab-content active">
+            {% include 'page_market.html' %}
+        </div>
+
+        <div id="tab-2" class="tab-content">
+            {% include 'page_backtest.html' %}
+        </div>
+
+        <div id="tab-3" class="tab-content">
+            {% include 'page_radar.html' %}
+        </div>
+    </div>
+</div>
+
+<div id="delete-account-modal" class="modal-mask" onclick="if(event.target===this) closeDeleteAccountModal()">
+    <div class="modal-card" onclick="event.stopPropagation()">
+        <div class="modal-title">刪除帳號</div>
+        <div class="modal-desc">此操作不可復原，會刪除你的帳號、自選清單與個人設定。請輸入密碼確認。</div>
+        <input id="delete-pass-input" class="modal-input" type="password" placeholder="請輸入目前密碼" autocomplete="current-password">
+        <div id="delete-modal-msg" class="modal-msg"></div>
+        <div class="modal-actions">
+            <button class="btn-lite" onclick="closeDeleteAccountModal()">取消</button>
+            <button id="delete-account-submit" class="btn-danger" onclick="submitDeleteAccount()">確認刪除</button>
+        </div>
+    </div>
+</div>
+
+<div id="adjustment-history-modal" class="modal-mask" onclick="if(event.target===this) closeAdjustmentHistoryModal()">
+    <div class="modal-card" onclick="event.stopPropagation()" style="max-width:800px; max-height:600px; overflow:auto;">
+        <div class="modal-title">📋 調整歷史記錄</div>
+        <div style="margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap;">
+            <select id="history-filter-indicator" style="background:#0b0e11; border:1px solid #2b2f36; color:#fff; padding:6px 10px; border-radius:6px; font-size:0.85em; cursor:pointer;">
+                <option value="">所有指標</option>
+                <option value="MACD">MACD</option>
+                <option value="KD">KD</option>
+            </select>
+            <button onclick="loadAdjustmentHistory()" style="background:#3794ff; color:#fff; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.85em;">刷新</button>
+        </div>
+        <div id="history-table-container" style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.8em;">
+                <thead>
+                    <tr style="background:#151a21; border-bottom:1px solid #2b2f36;">
+                        <th style="padding:8px; text-align:left;">股票</th>
+                        <th style="padding:8px; text-align:left;">指標</th>
+                        <th style="padding:8px; text-align:center;">變化率</th>
+                        <th style="padding:8px; text-align:center;">原始分數</th>
+                        <th style="padding:8px; text-align:center;">調整後分數</th>
+                        <th style="padding:8px; text-align:left;">時間</th>
+                    </tr>
+                </thead>
+                <tbody id="history-table-body">
+                    <tr><td colspan="6" style="padding:20px; text-align:center; color:var(--dim);">載入中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="modal-actions" style="margin-top:12px;">
+            <button class="btn-lite" onclick="closeAdjustmentHistoryModal()">關閉</button>
+        </div>
+    </div>
+</div>
+
+<div id="post-deploy-checklist-modal" class="modal-mask" onclick="if(event.target===this) return false;">
+    <div class="modal-card" onclick="event.stopPropagation()" style="max-width:560px;">
+        <div class="modal-title" style="color:#8fd3ff;">部署後檢查提醒</div>
+        <div class="modal-desc" style="margin-bottom:10px;">
+            這個提醒只會在此帳號第一次登入顯示一次。請完成下列檢查後按「完成提醒」。
+        </div>
+        <ol style="margin:0 0 12px 18px; padding:0; color:#d6dde8; font-size:0.88em; line-height:1.5;">
+            <li>註冊與登入流程可正常使用</li>
+            <li>圖表可正常顯示與切級別</li>
+            <li>回測可跑出結果</li>
+            <li>登出、6小時到期、跨日到期規則正確</li>
+            <li>重新部署後資料仍保留（持久磁碟）</li>
+        </ol>
+        <div style="background:#0b0e11; border:1px solid #2b2f36; border-radius:8px; padding:10px; color:#9fb0c4; font-size:0.82em; margin-bottom:10px;">
+            完成後可在專案資料夾搜尋：<b>POST_DEPLOY_10MIN_CHECKLIST.md</b>
+        </div>
+        <div id="post-deploy-checklist-msg" class="modal-msg"></div>
+        <div class="modal-actions">
+            <button id="post-deploy-checklist-complete-btn" class="btn-lite" style="background:#3794ff; color:#fff; border-color:#3794ff;" onclick="completePostDeployChecklistReminder()">完成提醒（不再顯示）</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- [全域橋接變數] ---
+    const SHOULD_SHOW_POST_DEPLOY_CHECKLIST_REMINDER = {{ 'true' if show_post_deploy_checklist_reminder else 'false' }};
+    const stockNames = { "2330": "台積電", "2317": "鴻海", "2880": "華南金", "2882": "國泰金" };
+    let currentSymbol = null;
+    let watchlistSortable = null;
+    let isApplyingUserSettings = false;
+    let pendingUserSettings = {};
+    let saveSettingsTimer = null;
+    let macdSettingsMsgTimer = null;
+    const settingsExcludePattern = /(timeframe|level|kline|tf)/i;
+
+    function getMacdStrictConfig() {
+        const threshold = Number(document.getElementById('macd-strict-threshold-pct')?.value || 0);
+        return { thresholdPct: Number.isFinite(threshold) ? threshold : 0 };
+    }
+
+    function showMacdSettingsMessage(text) {
+        const el = document.getElementById('macd-settings-msg');
+        if (!el) return;
+        el.innerText = text;
+        if (macdSettingsMsgTimer) clearTimeout(macdSettingsMsgTimer);
+        macdSettingsMsgTimer = setTimeout(() => {
+            el.innerText = '';
+        }, 1800);
+    }
+
+    function applyMacdSettings() {
+        const cfg = getMacdStrictConfig();
+        queueSaveUserSetting('macd-strict-threshold-pct', cfg.thresholdPct);
+        flushUserSettings();
+        showMacdSettingsMessage('MACD 設定已套用');
+        if (typeof refreshMacdZeroOption === 'function') refreshMacdZeroOption();
+        return false;
+    }
+
+    function getMacdStrictConfig() {
+        const thresholdPct = Number(document.getElementById('macd-strict-threshold-pct')?.value || 0);
+        return { thresholdPct };
+    }
+
+    function showMacdSettingsMessage(msg) {
+        const div = document.getElementById('macd-settings-msg');
+        if (div) {
+            div.innerText = msg;
+            setTimeout(() => { div.innerText = ''; }, 2000);
+        }
+    }
+
+    function applyKdSettings() {
+        const cfg = getKdStrictConfig();
+        queueSaveUserSetting('kd-strict-threshold-pct', cfg.thresholdPct);
+        flushUserSettings();
+        showKdSettingsMessage('KD 設定已套用');
+        if (typeof refreshKdZeroOption === 'function') refreshKdZeroOption();
+        return false;
+    }
+
+    function getKdStrictConfig() {
+        const thresholdPct = Number(document.getElementById('kd-strict-threshold-pct')?.value || 0);
+        return { thresholdPct };
+    }
+
+    function showKdSettingsMessage(msg) {
+        const div = document.getElementById('kd-settings-msg');
+        if (div) {
+            div.innerText = msg;
+            setTimeout(() => { div.innerText = ''; }, 2000);
+        }
+    }
+
+    function toggleSettingsMenu() {
+        document.getElementById('settings-panel')?.classList.toggle('show');
+        return false;
+    }
+
+    function openPostDeployChecklistReminderModal() {
+        const modal = document.getElementById('post-deploy-checklist-modal');
+        if (modal) modal.classList.add('show');
+    }
+
+    function closePostDeployChecklistReminderModal() {
+        const modal = document.getElementById('post-deploy-checklist-modal');
+        if (modal) modal.classList.remove('show');
+    }
+
+    async function completePostDeployChecklistReminder() {
+        const msg = document.getElementById('post-deploy-checklist-msg');
+        const btn = document.getElementById('post-deploy-checklist-complete-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = '儲存中...';
+        }
+        if (msg) msg.innerText = '';
+
+        try {
+            const res = await fetch('/api/user/post-deploy-checklist/complete', { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            closePostDeployChecklistReminderModal();
+        } catch (err) {
+            if (msg) msg.innerText = `儲存失敗：${err.message}`;
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = '完成提醒（不再顯示）';
+            }
+        }
+        return false;
+    }
+
+    function logoutAccount() {
+        fetch('/api/auth/logout', { method: 'POST' })
+            .then(() => { window.location.href = '/login'; })
+            .catch(() => { window.location.href = '/login'; });
+        return false;
+    }
+
+    function openDeleteAccountModal() {
+        const modal = document.getElementById('delete-account-modal');
+        const input = document.getElementById('delete-pass-input');
+        const msg = document.getElementById('delete-modal-msg');
+        msg.innerText = '';
+        input.value = '';
+        modal.classList.add('show');
+        setTimeout(() => input.focus(), 30);
+        return false;
+    }
+
+    function closeDeleteAccountModal() {
+        const modal = document.getElementById('delete-account-modal');
+        modal.classList.remove('show');
+        return false;
+    }
+
+    function openAdjustmentHistoryModal() {
+        const modal = document.getElementById('adjustment-history-modal');
+        modal.classList.add('show');
+        loadAdjustmentHistory();
+        return false;
+    }
+
+    function closeAdjustmentHistoryModal() {
+        const modal = document.getElementById('adjustment-history-modal');
+        modal.classList.remove('show');
+        return false;
+    }
+
+    async function loadAdjustmentHistory() {
+        try {
+            const filterIndicator = document.getElementById('history-filter-indicator')?.value || '';
+            const url = new URL('/api/adjustment-history', window.location.origin);
+            if (filterIndicator) url.searchParams.append('indicator_filter', filterIndicator);
+            url.searchParams.append('limit', 500);
+
+            const res = await fetch(url.toString());
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            
+            const data = await res.json();
+            const records = data.records || [];
+            const tbody = document.getElementById('history-table-body');
+            
+            if (!records.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="padding:20px; text-align:center; color:var(--dim);">暫無調整記錄</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = records.map(r => `
+                <tr style="border-bottom:1px solid #2b2f36; hover:background:#151a21;">
+                    <td style="padding:8px; font-weight:bold; color:#3794ff;">${escapeHtml(r.symbol)}</td>
+                    <td style="padding:8px;">${r.indicator_type === 'MACD' ? '📊 MACD' : '📈 KD'}</td>
+                    <td style="padding:8px; text-align:center; color:#00f2a1;">${r.change_pct?.toFixed(2)}%</td>
+                    <td style="padding:8px; text-align:center;">${r.original_score ?? '--'}</td>
+                    <td style="padding:8px; text-align:center; color:#f0b90b;">${r.adjusted_score ?? '--'}</td>
+                    <td style="padding:8px; color:var(--dim); font-size:0.75em;">${new Date(r.adjusted_at).toLocaleString('zh-TW')}</td>
+                </tr>
+            `).join('');
+        } catch (err) {
+            console.error('❌ 載入調整歷史失敗:', err);
+            const tbody = document.getElementById('history-table-body');
+            tbody.innerHTML = '<tr><td colspan="6" style="padding:20px; text-align:center; color:#ff3b6a;">載入失敗</td></tr>';
+        }
+    }
+
+    function escapeHtml(text) {
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+        return String(text).replace(/[&<>"']/g, m => map[m]);
+    }
+
+    async function downloadBackup() {
+        try {
+            const res = await fetch('/api/backup-download');
+            if (!res.ok) {
+                const data = await res.json();
+                alert(`❌ 備份失敗: ${data.error || '未知錯誤'}`);
+                return false;
+            }
+            
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'thefox_backup.zip';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            console.log('✓ 已下載備份文件');
+        } catch (err) {
+            console.error('❌ 下載備份失敗:', err);
+            alert('下載備份失敗，請檢查瀏覽器控制台');
+        }
+        return false;
+    }
+
+    async function uploadBackup(fileInput) {
+        if (!fileInput.files || !fileInput.files[0]) return;
+        
+        const file = fileInput.files[0];
+        if (!file.name.endsWith('.zip') && !file.name.endsWith('.json')) {
+            alert('❌ 僅支持 .zip 或 .json 文件');
+            fileInput.value = '';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await fetch('/api/backup-upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                alert(`❌ 上傳失敗: ${data.error || '未知錯誤'}`);
+                fileInput.value = '';
+                return;
+            }
+
+            alert(`✓ ${data.message}`);
+            fileInput.value = '';
+            
+            // 刷新頁面以顯示恢復的數據
+            setTimeout(() => { window.location.reload(); }, 800);
+        } catch (err) {
+            console.error('❌ 上傳備份失敗:', err);
+            alert('上傳備份失敗，請檢查瀏覽器控制台');
+            fileInput.value = '';
+        }
+    }
+
+    async function submitDeleteAccount() {
+        const input = document.getElementById('delete-pass-input');
+        const msg = document.getElementById('delete-modal-msg');
+        const btn = document.getElementById('delete-account-submit');
+        const pass = String(input.value || '').trim();
+
+        if (!pass) {
+            msg.innerText = '請先輸入密碼。';
+            return false;
+        }
+
+        btn.disabled = true;
+        btn.innerText = '刪除中...';
+        msg.innerText = '';
+
+        try {
+            const res = await fetch('/api/auth/delete-account', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: pass })
+            });
+            const data = await res.json().catch(() => ({ success: false, error: '系統回傳格式錯誤' }));
+            if (!res.ok || !data.success) {
+                msg.innerText = data.error || '刪除失敗，請稍後再試';
+                return false;
+            }
+            alert(data.message || '帳號已刪除並已登出');
+            window.location.href = '/login';
+        } catch (err) {
+            msg.innerText = `刪除失敗：${err.message}`;
+        } finally {
+            btn.disabled = false;
+            btn.innerText = '確認刪除';
+        }
+        return false;
+    }
+
+    function getPersistableElements() {
+        const all = document.querySelectorAll('input[id], select[id], textarea[id]');
+        return Array.from(all).filter(el => {
+            if (!el.id) return false;
+            if (settingsExcludePattern.test(el.id)) return false;
+            if (el.type === 'button' || el.type === 'submit') return false;
+            if (el.id === 'sidebar-search') return false;
+            return true;
+        });
+    }
+
+    function readElementValue(el) {
+        if (el.type === 'checkbox') return !!el.checked;
+        if (el.type === 'radio') return el.checked ? el.value : null;
+        return el.value;
+    }
+
+    function applyElementValue(el, value) {
+        if (value === undefined || value === null) return;
+        if (el.type === 'checkbox') {
+            el.checked = !!value;
+            return;
+        }
+        if (el.type === 'radio') {
+            el.checked = String(el.value) === String(value);
+            return;
+        }
+        el.value = value;
+    }
+
+    function flushUserSettings() {
+        const payload = { ...pendingUserSettings };
+        pendingUserSettings = {};
+        saveSettingsTimer = null;
+        if (Object.keys(payload).length === 0) return;
+
+        fetch('/api/user/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings: payload })
+        }).catch(err => console.warn('儲存使用者設定失敗:', err));
+    }
+
+    function queueSaveUserSetting(key, value) {
+        if (!key) return;
+        pendingUserSettings[key] = value;
+        if (saveSettingsTimer) clearTimeout(saveSettingsTimer);
+        saveSettingsTimer = setTimeout(flushUserSettings, 250);
+    }
+
+    async function loadUserSettings() {
+        try {
+            const res = await fetch('/api/user/settings');
+            const data = await res.json();
+            const settings = data?.settings || {};
+
+            isApplyingUserSettings = true;
+            Object.entries(settings).forEach(([key, value]) => {
+                const els = document.querySelectorAll(`#${CSS.escape(key)}`);
+                if (!els || !els.length) return;
+                els.forEach(el => applyElementValue(el, value));
+            });
+            isApplyingUserSettings = false;
+        } catch (err) {
+            isApplyingUserSettings = false;
+            console.warn('讀取使用者設定失敗:', err);
+        }
+    }
+
+    function bindUserSettingsPersistence() {
+        const els = getPersistableElements();
+        els.forEach(el => {
+            const handler = () => {
+                if (isApplyingUserSettings) return;
+                const value = readElementValue(el);
+                if (value === null) return;
+                queueSaveUserSetting(el.id, value);
+            };
+
+            if (el.type === 'text' || el.type === 'number' || el.type === 'datetime-local' || el.tagName === 'TEXTAREA') {
+                el.addEventListener('change', handler);
+                el.addEventListener('blur', handler);
+            } else {
+                el.addEventListener('change', handler);
+            }
+        });
+
+        const macdThresholdInput = document.getElementById('macd-strict-threshold-pct');
+        if (macdThresholdInput) {
+            macdThresholdInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    applyMacdSettings();
+                }
+            });
+        }
+    }
+
+    // --- [主框架邏輯：側邊欄收折] ---
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('collapsed');
+    }
+
+    // --- [主框架邏輯：分頁切換] ---
+    function switchTab(idx) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        
+        document.getElementById('tab-' + idx).classList.add('active');
+        document.querySelectorAll('.tab-btn')[idx-1].classList.add('active');
+        
+        // 分頁特定的自動觸發邏輯 (若存在該函數)
+        if(idx === 1 && typeof loadMarketOverview === "function") loadMarketOverview();
+        if(idx === 3 && typeof loadRadarData === "function") loadRadarData();
+    }
+
+    function loadStockDetail(symbol) {
+        currentSymbol = symbol;
+        switchTab(1); // 不論在哪，搜尋必定跳回第一頁
+        
+        // 🌟 新增：檢查追蹤狀態，同步更新「加入/移除」按鈕 UI
+        // 我們把這個檢查放在刷新頁面之前
+        if (typeof syncWatchlistButtonStyle === "function") {
+            syncWatchlistButtonStyle(symbol);
+        }
+
+        // 呼叫 Page 1 的刷新函數 (在 page_market.html 中實作)
+        if (typeof refreshStockPage === "function") {
+            refreshStockPage(symbol);
+        }
+    }
+
+    // --- [全域橋接邏輯：搜尋執行器] ---
+    function executeSearch() {
+        const searchInput = document.getElementById('sidebar-search');
+        if (!searchInput) return;
+
+        const symbol = searchInput.value.trim();
+        
+        if (symbol) {
+            console.log(`🔎 執行搜尋：${symbol}`);
+            // 呼叫你已經寫好的 loadStockDetail
+            loadStockDetail(symbol);
+            
+            // 搜尋完的小細節：清空輸入框並讓焦點離開（手機鍵盤才會收起來）
+            searchInput.value = '';
+            searchInput.blur(); 
+        } else {
+            alert("請輸入股票代號！");
+        }
+    }
+
+    // 🔄 同步按鈕樣式的核心邏輯
+    function syncWatchlistButtonStyle(symbol) {
+        fetch('/api/watchlist')
+            .then(res => res.json())
+            .then(data => {
+                // 判斷當前代號是否在清單中
+                const isInWatchlist = data.some(item => 
+                    (typeof item === 'object' ? item.symbol : item) === symbol
+                );
+                
+                const btn = document.getElementById('btn-watchlist-toggle');
+                if (!btn) return;
+
+                if (isInWatchlist) {
+                    // 狀態 A：已在清單內，顯示「移除」
+                    btn.innerHTML = '✔️ 已在清單 (點擊移除)';
+                    btn.style.background = '#3c4043'; // 變成深灰色
+                    btn.style.color = '#f28b82';     // 字體變淡紅
+                    btn.onclick = () => handleWatchlistAction('remove', symbol);
+                } else {
+                    // 狀態 B：未在清單內，顯示「加入」
+                    btn.innerHTML = '⭐ 加入清單';
+                    btn.style.background = 'var(--primary)'; // 恢復原本的主題藍/綠
+                    btn.style.color = '#fff';
+                    btn.onclick = () => handleWatchlistAction('add', symbol);
+                }
+            });
+    }
+
+    // 🛠️ 處理「加入」與「移除」的動作執行器
+    function handleWatchlistAction(action, symbol) {
+        const url = action === 'add' ? `/api/watchlist/add/${symbol}` : `/api/watchlist/remove/${symbol}`;
+        const method = action === 'add' ? 'POST' : 'DELETE';
+
+        fetch(url, { method: method })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    // 1. 立即更新左側清單列表
+                    if (window.fetchWatchlist) window.fetchWatchlist();
+                    // 2. 立即翻轉按鈕樣式
+                    syncWatchlistButtonStyle(symbol);
+                }
+            })
+            .catch(err => console.error("清單操作失敗:", err));
+    }
+
+    // --- [側邊欄邏輯：清單載入與刪除] ---
+    function initWatchlistSortable() {
+        const container = document.getElementById('watchlist-container');
+        if (!container || !window.Sortable) return;
+
+        if (watchlistSortable) {
+            watchlistSortable.destroy();
+            watchlistSortable = null;
+        }
+
+        watchlistSortable = new Sortable(container, {
+            animation: 160,
+            handle: '.drag-handle',
+            draggable: '.watchlist-item',
+            delay: 300,
+            delayOnTouchOnly: true,
+            touchStartThreshold: 4,
+            onEnd: () => saveWatchlistOrder()
+        });
+    }
+
+    function saveWatchlistOrder() {
+        const symbols = Array.from(document.querySelectorAll('#watchlist-container .watchlist-item'))
+            .map(el => el.dataset.symbol)
+            .filter(Boolean);
+
+        if (!symbols.length) return;
+
+        fetch('/api/watchlist/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbols })
+        }).catch(err => console.error('儲存排序失敗:', err));
+    }
+
+    function fetchWatchlist() {
+        const container = document.getElementById('watchlist-container');
+        if (!container) return;
+
+        fetch('/api/watchlist')
+            .then(res => res.json())
+            .then(data => {
+                container.innerHTML = '';
+                if (!data || data.length === 0) {
+                    container.innerHTML = '<div style="padding:15px; color:#666; text-align:center;">暫無追蹤標的</div>';
+                    return;
+                }
+
+                data.forEach(item => {
+                    const symbol = (typeof item === 'object') ? item.symbol : item;
+                    const name = item.name || '';
+                    
+                    const div = document.createElement('div');
+                    div.className = 'watchlist-item';
+                    div.dataset.symbol = symbol;
+                    // ... 樣式設定保持不變 ...
+
+                    div.innerHTML = `
+                        <div style="flex-grow:1; display:flex; align-items:center; gap:10px;" onclick="loadStockDetail('${symbol}')">
+                            <span class="drag-handle" title="長按拖曳排序">☰</span>
+                            <span style="color:#8ab4f8; font-weight:bold; min-width:45px;">${symbol}</span>
+                            <span style="color:#9aa0a6; font-size:0.9em;">${name}</span>
+                        </div>
+                        <!-- 🌟 關鍵在這裡：對接移除功能 -->
+                        <span onclick="event.stopPropagation(); executeRemoveFromWatchlist('${symbol}')" 
+                            style="color:#f28b82; padding:0 8px; font-size:1.2em; font-weight:bold; cursor:pointer;"
+                            title="移除清單">
+                            ×
+                        </span>
+                    `;
+                    container.appendChild(div);
+                });
+
+                initWatchlistSortable();
+            })
+            .catch(err => {
+                container.innerHTML = '<div style="color:#f28b82; padding:10px;">系統連線異常</div>';
+            });
+    }
+    // --- 刪除追蹤清單項目 ---
+    function executeRemoveFromWatchlist(symbol) {
+        // 💡 增加一個簡單的確認提示，避免手滑誤刪
+        if (!confirm(`確定要將 ${symbol} 從自選清單移除嗎？`)) return;
+
+        fetch(`/api/watchlist/remove/${symbol}`, { method: 'DELETE' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    // 1. 重新抓取清單，讓側邊欄立刻更新
+                    fetchWatchlist();
+                    
+                    // 2. [進階同步] 如果右側畫面剛好正開著這檔股票，也要把它的「加入清單」按鈕變回原狀
+                    if (typeof currentSymbol !== 'undefined' && currentSymbol === symbol) {
+                        if (window.syncWatchlistButtonStyle) {
+                            syncWatchlistButtonStyle(symbol);
+                        }
+                    }
+                } else {
+                    alert("移除失敗，請稍後再試。");
+                }
+            })
+            .catch(err => console.error("移除操作異常:", err));
+    }
+
+    // --- [啟動初始化] ---
+    window.onload = async function() {
+        await loadUserSettings();
+        bindUserSettingsPersistence();
+        fetchWatchlist();
+        if (SHOULD_SHOW_POST_DEPLOY_CHECKLIST_REMINDER) {
+            openPostDeployChecklistReminderModal();
+        }
+    }
+
+    // --- [頁面 3 邏輯：全盤掃描與排序]---
+    function renderRadarTable(data) {
+        const placeholder = document.getElementById('radar-placeholder');
+        const table = document.getElementById('radar-table');
+        const tbody = document.getElementById('radar-body');
+        const updateTime = document.getElementById('radar-update-time');
+
+        if (!data.data || data.data.length === 0) {
+            placeholder.innerText = "📭 掃描完成，但目前資料庫沒有記錄。";
+            placeholder.style.display = 'block';
+            table.style.display = 'none';
+            return;
+        }
+
+        // --- 核心：排序邏輯（完美 -> 0 -> |1|~|5|，同絕對值正分在前負分在後） ---
+        const getPriority = (s, m) => {
+            if (s === -1 && m === 1) return 0; // ✨ 完美買入優先
+            if (s === 0) return 1;             // 0 分排第二
+
+            const absS = Math.abs(s);
+            if (absS >= 1 && absS <= 5) {
+                const base = 2 + (absS - 1) * 2;
+                return s > 0 ? base : base + 1; // 同絕對值 + 在前，- 在後
+            }
+
+            return 99; // 其他異常分數排最後
+        };
+
+        const getDiagInfo = (s, m, biasPct) => {
+            if (s === -1 && m === 1) return { text: '✨ 完美買入', cls: 'bull' };
+            if (s === 1 || s === -1) return { text: '🔥 優秀買點', cls: 'bull' };
+            if (s === 2 || s === -2) return { text: '✅ 可以購買', cls: 'bull' };
+            if (s === 3) return { text: '買向過熱', cls: 'neutral' };
+            if (s === -3) return { text: '賣向過熱', cls: 'neutral' };
+            if (s === 4 || s === 5) {
+                const biasText = typeof biasPct === 'number' ? ` (乖離率 ${biasPct > 0 ? '+' : ''}${biasPct.toFixed(2)}%)` : '';
+                const isRedLight = typeof biasPct === 'number' && Math.abs(biasPct) > 5;
+                return { text: `${isRedLight ? '🔴 ' : ''}買向過熱${biasText}`, cls: isRedLight ? 'hot' : 'neutral' };
+            }
+            if (s === -4 || s === -5) {
+                const biasText = typeof biasPct === 'number' ? ` (乖離率 ${biasPct > 0 ? '+' : ''}${biasPct.toFixed(2)}%)` : '';
+                const isRedLight = typeof biasPct === 'number' && Math.abs(biasPct) > 5;
+                return { text: `${isRedLight ? '🔴 ' : ''}賣向過熱${biasText}`, cls: isRedLight ? 'hot' : 'neutral' };
+            }
+            return { text: '✅ 可以購買', cls: 'bull' };
+        };
+
+        // 3. 執行排序 (先比優先級，最後以代號穩定排序)
+        let sorted = data.data.sort((a, b) => {
+            let pA = getPriority(a.total_score, a.macd_score);
+            let pB = getPriority(b.total_score, b.macd_score);
+            if (pA !== pB) return pA - pB;
+            return String(a.symbol).localeCompare(String(b.symbol));
+        });
+
+        // 4. 填充表格
+        placeholder.style.display = 'none';
+        table.style.display = 'table';
+        tbody.innerHTML = '';
+        updateTime.innerText = `🕒 數據日期: ${data.date}`;
+
+        sorted.forEach((item, index) => {
+            const diag = getDiagInfo(item.total_score, item.macd_score, item.bias_pct);
+            const name = item.name || "個股";
+            const macdTxt = item.macd_score > 0 ? `+${item.macd_score}` : item.macd_score;
+            const macdCls = item.macd_score > 0 ? 'macd-pos' : (item.macd_score < 0 ? 'macd-neg' : '');
+
+            tbody.innerHTML += `
+                <tr onclick="loadStockDetail('${item.symbol}')">
+                    <td class="rank-num ${index < 3 ? 'rank-top-3' : ''}">${index + 1}</td>
+                    <td style="text-align:left;">
+                        <span class="radar-symbol">${item.symbol}</span>
+                        <span class="radar-name">${name}</span>
+                    </td>
+                    <td class="score-badge">${item.total_score}</td>
+                    <td class="macd-badge ${macdCls}">${macdTxt}</td>
+                    <td class="diag-label"><span class="conclusion ${diag.cls}">${diag.text}</span></td>
+                </tr>`;
+        });
+    }
+
+    function loadRadarData(forceRefresh = false) {
+        const placeholder = document.getElementById('radar-placeholder');
+        const table = document.getElementById('radar-table');
+        const macdCfg = getMacdStrictConfig();
+
+        const cacheKey = `radar_0050_cache_v3_${macdCfg.thresholdPct}`;
+        const todayKey = new Date().toISOString().slice(0, 10);
+
+        if (!forceRefresh) {
+            try {
+                const cachedRaw = localStorage.getItem(cacheKey);
+                if (cachedRaw) {
+                    const cached = JSON.parse(cachedRaw);
+                    if (cached && cached.saved_day === todayKey && cached.payload && Array.isArray(cached.payload.data)) {
+                        renderRadarTable(cached.payload);
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('雷達快取解析失敗，改走即時抓取:', e);
+            }
+        }
+
+        // 強制更新或當日無快取時才打 API
+        placeholder.innerHTML = "📡 正在從雲端數據庫同步診斷結果...";
+        placeholder.style.display = 'block';
+        table.style.display = 'none';
+
+        fetch(`/api/scan/0050?macd_threshold_pct=${encodeURIComponent(macdCfg.thresholdPct)}`)
+        .then(res => res.json())
+        .then(data => {
+            renderRadarTable(data);
+            try {
+                localStorage.setItem(cacheKey, JSON.stringify({
+                    saved_day: todayKey,
+                    payload: data
+                }));
+            } catch (e) {
+                console.warn('雷達快取寫入失敗:', e);
+            }
+        })
+        .catch(err => {
+            placeholder.innerHTML = `<span style="color:var(--danger)">⚠️ 掃描中斷: ${err.message}</span>`;
+        });
+    }
+</script>
+</body>
+</html>

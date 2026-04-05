@@ -1,0 +1,520 @@
+<!-- ================= [分頁 2：專業回測指揮中心 - 完整修復版] ================= -->
+<style>
+    :root {
+        --accent-blue: #3794ff;
+        --accent-gold: #f0b90b;
+        --bg-darker: #0b0e11;
+        --card-bg: #1e2329;
+        --border-color: #2b3139;
+        --text-dim: #848e9c;
+    }
+
+    /* 1. 全域美化與呼吸空間 */
+    .s-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 30px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        margin-bottom: 30px;
+    }
+
+    .setup-grid {
+        display: grid; 
+        grid-template-columns: 1fr 1fr; 
+        gap: 60px; /* 增加左右兩大區塊間距 */
+    }
+
+    .input-group {
+        margin-bottom: 22px; /* 增加輸入框上下間距 */
+    }
+
+    .p-label { color: var(--text-dim); font-size: 0.85em; margin-bottom: 8px; display: block; font-weight: 500; }
+    
+    .p-input {
+        background: var(--bg-darker);
+        border: 1px solid var(--border-color);
+        color: #fff;
+        padding: 12px;
+        border-radius: 8px;
+        width: 100%;
+        transition: 0.3s;
+        font-family: inherit;
+        margin-top: 5px;
+    }
+    .p-input:focus { border-color: var(--accent-blue); outline: none; box-shadow: 0 0 0 2px rgba(55,148,255,0.2); }
+
+    /* 2. 表格專業化 */
+    .data-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .data-table th { 
+        background: rgba(255,255,255,0.02);
+        color: var(--text-dim); 
+        padding: 14px; 
+        font-size: 0.8em; 
+        text-transform: uppercase;
+        border-bottom: 2px solid var(--border-color);
+    }
+    .data-table td { padding: 16px 14px; border-bottom: 1px solid var(--border-color); }
+
+    /* 3. 狀態標籤 */
+    .conclusion { padding: 4px 10px; border-radius: 4px; font-size: 0.85em; font-weight: bold; }
+    .conclusion.bull { background: rgba(0, 242, 161, 0.15); color: #00f2a1; }
+    .conclusion.neutral { background: rgba(132, 142, 156, 0.15); color: var(--text-dim); }
+    .conclusion.hot { background: rgba(255, 59, 106, 0.18); color: #ff3b6a; }
+
+    /* 萬年曆選取器樣式優化 */
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+        filter: invert(1); cursor: pointer; opacity: 0.7;
+    }
+
+    /* 買賣分數 Checkbox 群組 */
+    .score-check-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+    }
+    .score-check-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg-darker);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 10px 16px;
+        cursor: pointer;
+        color: var(--text-dim);
+        font-size: 0.95em;
+        transition: 0.2s;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    .score-check-btn:has(input:checked) {
+        border-color: var(--accent-blue);
+        color: #fff;
+        background: rgba(55,148,255,0.12);
+    }
+    .score-check-btn input[type=checkbox] {
+        accent-color: var(--accent-blue);
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+    }
+</style>
+
+<div style="padding: 20px; max-width: 1400px; margin: auto;">
+    
+    <!-- 區塊 A：即時評分快照 -->
+    <div class="s-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <h3 id="score-title" style="margin: 0; font-size: 1.2em; display: flex; align-items: center; gap: 10px;">
+                    ⚡ 即時清單分數 <span id="score-kline-badge" style="font-size: 0.6em; color: var(--text-dim); background: #333; padding: 2px 8px; border-radius: 40px;">D</span>
+                </h3>
+                <select id="score-timeframe" class="p-input" style="width: 110px; padding: 6px 10px; margin:0;">
+                    <option value="5m">5</option>
+                    <option value="15m">15</option>
+                    <option value="1h">60</option>
+                    <option value="1d" selected>D</option>
+                    <option value="1wk">W</option>
+                    <option value="1mo">M</option>
+                </select>
+            </div>
+            <button class="search-btn" onclick="runWatchlistScore()" style="width: auto; padding: 10px 24px; margin: 0; background: var(--accent-blue); border-radius: 8px;">
+                🚀 開始批次掃描
+            </button>
+        </div>
+        
+        <div id="tab2-score-placeholder" style="color: var(--text-dim); text-align: center; padding: 40px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+            等待掃描指令...
+        </div>
+        
+        <div style="overflow-x: auto;">
+            <table id="tab2-score-table" class="data-table" style="display: none;">
+                <thead>
+                    <tr>
+                        <th style="text-align: left;">標的</th>
+                        <th style="text-align: left;">名稱</th>
+                        <th style="text-align: center;">原始總分</th>
+                        <th style="text-align: center;">MACD 分</th>
+                        <th style="text-align: center;">診斷結論</th>
+                    </tr>
+                </thead>
+                <tbody id="tab2-score-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 區塊 B：歷史回測引擎 -->
+    <div class="s-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+            <h3 style="margin: 0; color: var(--accent-gold); font-size: 1.2em;">📊 清單回測</h3>
+            <button class="search-btn" onclick="runWatchlistBacktest()" style="width: auto; padding: 12px 30px; background: var(--accent-gold); color: #000; font-weight: bold; border-radius: 8px;">
+                ▶ 開始批次回測
+            </button>
+        </div>
+        
+        <div style="background: rgba(0,0,0,0.2); padding: 30px; border-radius: 12px; margin-bottom: 30px; border: 1px solid var(--border-color);">
+            <div class="setup-grid">
+                <!-- 左側：環境設定 -->
+                <div>
+                    <h4 style="margin-top:0; font-size:0.95em; color:#fff; border-left: 4px solid var(--accent-blue); padding-left: 12px; margin-bottom: 25px;">⚙️ 環境設定</h4>
+                    <div style="display: grid; grid-template-columns: 120px 1fr; gap: 40px;">
+                        <div class="input-group">
+                            <label class="p-label">初始資金 (萬)</label>
+                            <input type="number" id="bt-capital" value="100" class="p-input">
+                        </div>
+                        <div class="input-group">
+                            <label class="p-label">交易單位</label>
+                            <select id="bt-unit" class="p-input">
+                                <option value="lot" selected>張 (1000股)</option>
+                                <option value="share">股 (1股)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label class="p-label">📅 策略開始時間 (萬年曆 - 精確至分)</label>
+                        <input type="datetime-local" id="bt-start" value="2023-01-01T09:00" class="p-input">
+                    </div>
+                    <div class="input-group">
+                        <label class="p-label">📅 策略結束時間</label>
+                        <input type="datetime-local" id="bt-end" value="2024-04-01T13:30" class="p-input">
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px;">
+                        <div class="input-group">
+                            <label class="p-label">級別</label>
+                            <select id="bt-level" class="p-input" onchange="adjustDateRangeByLevel()">
+                                <option value="5m">5 (限最近60天)</option><option value="1h">60 (限最近2年)</option><option value="1d" selected>D</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label class="p-label">手續費‰</label>
+                            <input type="number" id="bt-fee" value="1.425" class="p-input" step="0.001">
+                        </div>
+                        <div class="input-group">
+                            <label class="p-label">交易稅‰</label>
+                            <input type="number" id="bt-tax" value="3.000" class="p-input" step="0.001">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右側：買賣觸發矩陣 -->
+                <div>
+                    <h4 style="margin-top:0; font-size:0.95em; color:#fff; border-left: 4px solid var(--accent-gold); padding-left: 12px; margin-bottom: 25px;">🎯 買賣觸發矩陣</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 25px;">
+                        <div class="input-group">
+                            <label class="p-label" style="color:var(--accent-blue);">📥 買入總分 (可多選)</label>
+                            <div id="bt-buy-score" class="score-check-group">
+                                <label class="score-check-btn"><input type="checkbox" value="2"> 2 分</label>
+                                <label class="score-check-btn"><input type="checkbox" value="1" checked> 1 分</label>
+                                <label class="score-check-btn"><input type="checkbox" value="0"> 0 分</label>
+                                <label class="score-check-btn"><input type="checkbox" value="-1" checked> -1 分</label>
+                                <label class="score-check-btn"><input type="checkbox" value="-2"> -2 分</label>
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label class="p-label" style="color:var(--accent-gold);">📤 賣出總分 (可多選)</label>
+                            <div id="bt-sell-score" class="score-check-group">
+                                <label class="score-check-btn"><input type="checkbox" value="5" checked> 5 分</label>
+                                <label class="score-check-btn"><input type="checkbox" value="4" checked> 4 分</label>
+                                <label class="score-check-btn"><input type="checkbox" value="3"> 3 分</label>
+                                <label class="score-check-btn"><input type="checkbox" value="-3" checked> -3 分</label>
+                                <label class="score-check-btn"><input type="checkbox" value="-4"> -4 分</label>
+                                <label class="score-check-btn"><input type="checkbox" value="-5"> -5 分</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 🌟 補回遺失的狀態顯示區 (這就是導致當機的元兇) -->
+        <div id="tab2-bt-placeholder" style="color: var(--text-dim); text-align: center; padding: 40px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 20px;">
+            設定完成後，點擊執行來產生策略矩陣報表...
+        </div>
+
+        <!-- 矩陣回測結果區 -->
+        <div style="overflow-x: auto;">
+            <table id="tab2-bt-table" class="data-table" style="display: none;">
+                <thead id="tab2-bt-thead"></thead>
+                <tbody id="tab2-bt-body"></tbody>
+            </table>
+        </div>
+
+        <!-- 交易明細面板 (Trade Log) -->
+        <div id="tab2-detail-panel" style="margin-top:40px; display:none; background: rgba(0,0,0,0.3); border-radius: 12px; padding: 25px; border: 1px solid var(--border-color);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h4 style="margin:0; color:#fff;">📋 策略交易明細 &nbsp;<span id="detail-stock-label" style="font-size:0.85em; color:var(--accent-blue); background:rgba(55,148,255,0.1); padding:3px 10px; border-radius:6px;"></span></h4>
+                <div style="display: flex; gap: 20px;">
+                    <div><label class="p-label">選擇標的</label><select id="detail-stock-select" class="p-input" style="width: 200px; margin:0;" onchange="renderTradeLog()"></select></div>
+                    <div><label class="p-label">選擇策略</label><select id="detail-strategy-select" class="p-input" style="width: 150px; margin:0;" onchange="renderTradeLog()"></select></div>
+                </div>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr><th>時間</th><th>動作</th><th>價格</th><th>成本</th><th>餘額</th><th style="text-align:right;">獲利%</th></tr>
+                </thead>
+                <tbody id="detail-log-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    let backtestCache = []; 
+    let scoreCache = {}; // 存储從及時清單分數抽取的名稱信栟
+
+    function adjustDateRangeByLevel() {
+        const level = document.getElementById('bt-level').value;
+        const now = new Date();
+        let startDate = new Date();
+        
+        if (level === '5m') {
+            // 5分K：限最近60天
+            startDate.setDate(now.getDate() - 60);
+        } else if (level === '1h') {
+            // 1小時：限最近730天（2年）
+            startDate.setDate(now.getDate() - 730);
+        } else {
+            // 日K及以上：最近2年半用於回測
+            startDate.setDate(now.getDate() - 900);
+        }
+        
+        const startStr = startDate.toISOString().slice(0, 16);
+        const endStr = now.toISOString().slice(0, 16);
+        document.getElementById('bt-start').value = startStr;
+        document.getElementById('bt-end').value = endStr;
+    }
+
+    function updateScoreTitle() {
+        const tf = document.getElementById('score-timeframe').value;
+        const labels = { '5m': '5', '15m': '15', '1h': '60', '1d': 'D', '1wk': 'W', '1mo': 'M' };
+        document.getElementById('score-kline-badge').innerText = labels[tf];
+    }
+
+    // A區功能：即時算分
+    async function runWatchlistScore() {
+        const placeholder = document.getElementById('tab2-score-placeholder');
+        const table = document.getElementById('tab2-score-table');
+        const tf = document.getElementById('score-timeframe').value;
+        const macdCfg = typeof getMacdStrictConfig === 'function' ? getMacdStrictConfig() : { thresholdPct: 0 };
+        updateScoreTitle();
+        scoreCache = {};
+        placeholder.style.display = 'block'; table.style.display = 'none';
+        placeholder.innerHTML = "📡 正在進行批次掃描...";
+
+        try {
+            const res = await fetch(`/api/watchlist/instant-scores?tf=${tf}&macd_threshold_pct=${encodeURIComponent(macdCfg.thresholdPct)}&_ts=${Date.now()}`, {
+                cache: 'no-store'
+            });
+            const payload = await res.json();
+
+            if (!res.ok || payload.error) {
+                throw new Error(payload.error || `伺服器錯誤狀態碼: ${res.status}`);
+            }
+
+            const results = Array.isArray(payload.results) ? payload.results : [];
+
+            const tbody = document.getElementById('tab2-score-body');
+            const validResults = results.filter(item => !item.error && item.symbol && item.scores);
+            const errorResults = results.filter(item => item.error);
+
+            const sortedResults = validResults.sort((a,b) => (b.scores?.Total||0) - (a.scores?.Total||0));
+            sortedResults.forEach(item => {
+                scoreCache[item.symbol] = item.name || '';
+            });
+            
+            tbody.innerHTML = [
+                ...sortedResults.map(item => {
+                const s = item.scores?.Total ?? '--';
+                const m = item.scores?.MACD ?? '--';
+                const biasPct = item.metrics?.bias_pct;
+                const diag = getDiagStyle(s, m, biasPct);
+                return `<tr><td><b>${item.symbol}</b></td><td>${item.name}</td><td style="text-align:center;">${s}</td>
+                        <td style="text-align:center; color:${m>0?'#00f2a1':'#ff3b6a'}">${m>0?'+'+m:m}</td>
+                        <td style="text-align:center;"><span class="conclusion ${diag.cls}">${diag.text}</span></td></tr>`;
+                }),
+                ...errorResults.map(item => `<tr><td><b>${item.symbol || '--'}</b></td><td>${item.name || ''}</td><td colspan="3" style="text-align:center; color:#ff6b6b;">${item.error}</td></tr>`)
+            ].join('');
+
+            if (results.length === 0) {
+                placeholder.innerHTML = '⚠️ 自選清單目前沒有可掃描的標的';
+                table.style.display = 'none';
+                return;
+            }
+
+            placeholder.style.display = 'none'; table.style.display = 'table';
+        } catch (e) { placeholder.innerText = "❌ 失敗: " + e.message; }
+    }
+
+    function getDiagStyle(s, m, biasPct) {
+        if (s === -1 && m === 1) return { text: '✨ 完美買入', cls: 'bull' };
+        if (s === 1 || s === -1) return { text: '🔥 優秀買點', cls: 'bull' };
+        if (s === 2 || s === -2) return { text: '✅ 可以購買', cls: 'bull' };
+        if (s === 3) return { text: '買向過熱', cls: 'neutral' };
+        if (s === -3) return { text: '賣向過熱', cls: 'neutral' };
+        if (s === 4 || s === 5) {
+            const biasText = typeof biasPct === 'number' ? ` (乖離率 ${biasPct > 0 ? '+' : ''}${biasPct.toFixed(2)}%)` : '';
+            const isRedLight = typeof biasPct === 'number' && Math.abs(biasPct) > 5;
+            return { text: `${isRedLight ? '🔴 ' : ''}買向過熱${biasText}`, cls: isRedLight ? 'hot' : 'neutral' };
+        }
+        if (s === -4 || s === -5) {
+            const biasText = typeof biasPct === 'number' ? ` (乖離率 ${biasPct > 0 ? '+' : ''}${biasPct.toFixed(2)}%)` : '';
+            const isRedLight = typeof biasPct === 'number' && Math.abs(biasPct) > 5;
+            return { text: `${isRedLight ? '🔴 ' : ''}賣向過熱${biasText}`, cls: isRedLight ? 'hot' : 'neutral' };
+        }
+        return { text: '✅ 可以購買', cls: 'bull' };
+    }
+
+    // B區功能：矩陣回測與明細渲染
+    function getCheckedValues(groupId) {
+        return Array.from(document.querySelectorAll(`#${groupId} input[type=checkbox]:checked`)).map(cb => cb.value);
+    }
+
+    function renderBacktestTable() {
+        const thead = document.getElementById('tab2-bt-thead');
+        const tbody = document.getElementById('tab2-bt-body');
+        const buyScores = getCheckedValues('bt-buy-score');
+
+        thead.innerHTML = `<tr><th>標的</th>${buyScores.map(s => `
+            <th style="text-align:center; border-left:1px solid #333;">${s}分進場 (ROI/次數)</th>`).join('')}</tr>`;
+
+        tbody.innerHTML = backtestCache.map(item => {
+            // 优先从 scoreCache 中取名称（来自及时分数），其次 stockNames，最后 item.name
+            const displayName = scoreCache[item.symbol] || (typeof stockNames !== 'undefined' ? stockNames[item.symbol] : null) || item.name || item.symbol;
+            return `
+            <tr><td><b>${item.symbol}</b><br><small>${displayName}</small></td>
+                ${buyScores.map(s => {
+                    const st = item.strategies[s] || { roi: 0, trade_count: 0 };
+                    return `<td style="text-align:center; border-left:1px solid #333;">
+                        <div style="color:${st.roi>=0?'#00f2a1':'#ff3b6a'}; font-weight:bold;">${st.roi}%</div>
+                        <div style="font-size:0.8em; color:var(--text-dim)">${st.trade_count}次交易</div></td>`;
+                }).join('')}</tr>`;
+        }).join('');
+    }
+
+    function renderTradeLog() {
+        const symbol = document.getElementById('detail-stock-select').value;
+        const strategy = document.getElementById('detail-strategy-select').value;
+        const stockData = backtestCache.find(i => i.symbol === symbol);
+        // 優先從 scoreCache 中取名稱（來自及時分數），其次 stockNames，最後後端數據或代號
+        const displayName = scoreCache[symbol] || (typeof stockNames !== 'undefined' ? stockNames[symbol] : null) || stockData?.name || symbol;
+        const label = `${symbol}　${displayName || ''}`;
+        document.getElementById('detail-stock-label').innerText = label;
+        const trades = stockData?.strategies[strategy]?.trades ?? [];
+        
+        // 判斷時間格式：日K 及以上只顯示日期，否則顯示完整時間
+        const level = document.getElementById('bt-level').value;
+        const isHigherTimeframe = ['1d', '1wk', '1mo'].includes(level);
+        
+        document.getElementById('detail-log-body').innerHTML = trades.length ? trades.map(t => {
+            const displayTime = isHigherTimeframe ? t.time.split(' ')[0] : t.time;
+            return `<tr><td>${displayTime}</td><td style="color:${t.action==='BUY'?'#3794ff':'#f0b90b'}">${t.action}</td>
+            <td>$${t.price}</td><td>--</td><td>$${t.balance.toLocaleString()}</td><td style="text-align:right;">${t.pnl_pct}%</td></tr>`;
+        }).join('') 
+            : '<tr><td colspan="6" style="text-align:center;">無紀錄</td></tr>';
+    }
+
+    // 2. 矩陣回測邏輯 (加入防呆保護，避免 HTML 遺失時當機)
+    // 2. 矩陣回測邏輯 (真實後端串接版)
+    async function runWatchlistBacktest() {
+        const placeholder = document.getElementById('tab2-bt-placeholder');
+        const table = document.getElementById('tab2-bt-table');
+        const panel = document.getElementById('tab2-detail-panel');
+        
+        // 取得當前選中的買賣分數
+        const buyScores = getCheckedValues('bt-buy-score');
+        const sellScores = getCheckedValues('bt-sell-score');
+        if (!buyScores || !sellScores) return alert("找不到分數設定框！");
+
+        if (buyScores.length === 0 || sellScores.length === 0) {
+            alert("請至少選擇一個買入分數與一個賣出分數！");
+            return;
+        }
+
+        // 📦 步驟 1：打包所有 UI 參數
+        const payload = {
+            capital: document.getElementById('bt-capital').value,
+            unit: document.getElementById('bt-unit').value,
+            start: document.getElementById('bt-start').value,
+            end: document.getElementById('bt-end').value,
+            level: document.getElementById('bt-level').value,
+            fee: document.getElementById('bt-fee').value,
+            tax: document.getElementById('bt-tax').value,
+            buy_scores: buyScores,
+            sell_scores: sellScores
+        };
+
+        if (placeholder) {
+            placeholder.innerHTML = "⌛ 正在與後端 Python 引擎連線，執行多維度回測中...";
+            placeholder.style.display = 'block';
+        }
+        if (table) table.style.display = 'none';
+        if (panel) panel.style.display = 'none';
+
+        try {
+            // 步驟 2：取得您左側清單的真實代號
+            const listRes = await fetch('/api/watchlist');
+            const watchlist = await listRes.json();
+            
+            if (!watchlist || watchlist.length === 0) {
+                alert("請先在左側清單加入股票！");
+                if (placeholder) placeholder.style.display = 'none';
+                return;
+            }
+
+            // 將股票代號加入 payload 送給後端
+            payload.symbols = watchlist.map(item => typeof item === 'object' ? item.symbol : item);
+
+            // 🚀 步驟 3：正式發送 POST 請求到您的後端 API
+            const response = await fetch('/api/backtest/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error(`伺服器錯誤狀態碼: ${response.status}`);
+            
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
+
+            // 步驟 4：將後端算出的真實數據存入快取
+            // 預期後端回傳格式為 { results: [ ... ] }
+            backtestCache = data.results || data;
+
+            if (!Array.isArray(backtestCache) || backtestCache.length === 0) {
+                if (placeholder) {
+                    const lv = document.getElementById('bt-level').value;
+                    placeholder.style.display = 'block';
+                    placeholder.innerHTML = `⚠️ 此級別(${lv})在目前條件下無可用資料，已嘗試自動回退抓取仍為空。請改短時間區間或切換級別再試。`;
+                }
+                if (table) table.style.display = 'none';
+                if (panel) panel.style.display = 'none';
+                return;
+            }
+
+            // 步驟 5：渲染報表與顯示區塊
+            renderBacktestTable();
+            if (placeholder) placeholder.style.display = 'none';
+            if (table) table.style.display = 'table';
+            if (panel) panel.style.display = 'block';
+
+            // 同步下拉選單
+            document.getElementById('detail-stock-select').innerHTML = backtestCache.map(i => {
+                const displayName = scoreCache[i.symbol] || (typeof stockNames !== 'undefined' ? stockNames[i.symbol] : null) || i.name || '';
+                return `<option value="${i.symbol}">${i.symbol}　${displayName}</option>`;
+            }).join('');
+            document.getElementById('detail-strategy-select').innerHTML = buyScores.map(s => `<option value="${s}">${s} \u5206\u9032\u5834\u7b56\u7565</option>`).join('');
+            
+            renderTradeLog(); 
+
+        } catch (e) {
+            if (placeholder) {
+                placeholder.style.display = 'block';
+                placeholder.innerHTML = "❌ 引擎執行失敗: " + e.message;
+            } else {
+                alert("回測執行失敗: " + e.message);
+            }
+        }
+    }
+</script>

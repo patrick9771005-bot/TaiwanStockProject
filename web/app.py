@@ -1,0 +1,1702 @@
+import os
+import sys
+import json
+import re
+import sqlite3
+from datetime import datetime, timedelta
+from flask import Flask, jsonify, request, render_template, session, redirect, url_for, send_file
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+# 1. 【路徑校準】確保前後端看的是同一個資料庫
+current_dir = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(current_dir)
+
+# 確保 Python 能找到 models 資料夾
+sys.path.append(BASE_DIR)
+
+# 載入自定義模組
+from models.backtest_engine import get_instant_analysis, compute_recent_scores, run_perfect_backtest, run_matrix_backtest
+from models.scoring_engine import generate_diagnosis
+from models.technical_engine import resolve_kd_score, resolve_macd_score
+
+app = Flask(__name__)
+app.json.ensure_ascii = False 
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-change-me')
+SESSION_MAX_HOURS = float(os.environ.get('SESSION_MAX_HOURS', '6'))
+
+
+def _env_bool(name, default=False):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = _env_bool('SESSION_COOKIE_SECURE', default=True)
+
+# 🔥 關鍵修正：預設使用 data/stock_system.db，部署時可透過環境變數覆蓋
+DB_PATH = os.environ.get('STOCK_DB_PATH', os.path.join(BASE_DIR, 'data', 'stock_system.db'))
+USERNAME_PATTERN = re.compile(r'^[A-Za-z0-9]+$')
+
+def get_db_connection():
+    if str(os.environ.get('DB_DEBUG_LOG', '0')).lower() in ('1', 'true', 'yes', 'on'):
+        print(f"DEBUG: 正在連線資料庫 -> {DB_PATH}")
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row 
+    return conn
+
+
+def ensure_user_tables():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_watchlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            sort_order INTEGER,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, symbol),
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            setting_key TEXT NOT NULL,
+            setting_value TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, setting_key),
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    ''')
+
+    cursor.execute("PRAGMA table_info(users)")
+    user_cols = [row[1] for row in cursor.fetchall()]
+
+    if 'username_lower' not in user_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN username_lower TEXT")
+
+    if 'last_login_at' not in user_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN last_login_at TEXT")
+
+    cursor.execute("UPDATE users SET username_lower = LOWER(username) WHERE username_lower IS NULL OR username_lower = ''")
+    cursor.execute("UPDATE users SET last_login_at = COALESCE(last_login_at, created_at, CURRENT_TIMESTAMP)")
+
+    cursor.execute('''
+        SELECT username_lower, COUNT(*) AS c
+        FROM users
+        GROUP BY username_lower
+        HAVING c > 1
+        LIMIT 1
+    ''')
+    duplicate = cursor.fetchone()
+    if not duplicate:
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_lower ON users(username_lower)")
+
+    cursor.execute('''CREATE TABLE IF NOT EXISTS indicator_adjustment_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        symbol TEXT NOT NULL,
+        indicator_type TEXT NOT NULL,
+        timeframe TEXT,
+        change_pct REAL,
+        original_score INTEGER,
+        adjusted_score INTEGER,
+        adjusted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )''')
+
+    conn.commit()
+    conn.close()
+
+
+def purge_inactive_users(days=30):
+    cutoff = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE COALESCE(last_login_at, created_at) < ?", (cutoff,))
+    rows = cursor.fetchall()
+    stale_ids = [int(r['id']) for r in rows]
+    if stale_ids:
+        placeholders = ','.join(['?'] * len(stale_ids))
+        cursor.execute(f"DELETE FROM user_watchlist WHERE user_id IN ({placeholders})", stale_ids)
+        cursor.execute(f"DELETE FROM user_settings WHERE user_id IN ({placeholders})", stale_ids)
+        cursor.execute(f"DELETE FROM users WHERE id IN ({placeholders})", stale_ids)
+    conn.commit()
+    conn.close()
+
+
+def normalize_username(username):
+    return (username or '').strip().lower()
+
+
+def is_valid_username(username):
+    return bool(USERNAME_PATTERN.fullmatch((username or '').strip()))
+
+
+def is_ascii_printable(text):
+    s = (text or '').strip()
+    if not s:
+        return False
+    # 33~126: 半形英文、數字、符號（不含空白）
+    return all(33 <= ord(ch) <= 126 for ch in s)
+
+
+def current_user_id():
+    return session.get('user_id')
+
+
+def _is_truthy(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in ('1', 'true', 'yes', 'on')
+    return False
+
+
+def mark_session_login_start(now=None):
+    dt = now or datetime.now()
+    session['login_at'] = dt.isoformat(timespec='seconds')
+    session['login_day'] = dt.strftime('%Y-%m-%d')
+
+
+def is_session_expired(now=None):
+    if not current_user_id():
+        return False
+
+    dt_now = now or datetime.now()
+    login_at_raw = session.get('login_at')
+    login_day = session.get('login_day')
+
+    # 相容舊 session：沒有時間欄位時，先補上並視為仍有效
+    if not login_at_raw or not login_day:
+        mark_session_login_start(dt_now)
+        return False
+
+    try:
+        login_at = datetime.fromisoformat(login_at_raw)
+    except Exception:
+        return True
+
+    # 規則 1：跨到隔天直接失效
+    if dt_now.strftime('%Y-%m-%d') != str(login_day):
+        return True
+
+    # 規則 2：登入超過 6 小時失效
+    if dt_now - login_at >= timedelta(hours=SESSION_MAX_HOURS):
+        return True
+
+    return False
+
+
+def get_user_setting_value(user_id, key, default=None):
+    if not user_id:
+        return default
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT setting_value FROM user_settings WHERE user_id = ? AND setting_key = ?", (user_id, key))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return default
+    try:
+        return json.loads(row['setting_value'])
+    except Exception:
+        return row['setting_value']
+
+
+def get_scan_macd_config(user_id):
+    threshold_pct = float(request.args.get('macd_threshold_pct', get_user_setting_value(user_id, 'macd-strict-threshold-pct', 0) or 0) or 0)
+    return {
+        'mode': 'strict',
+        'threshold_pct': threshold_pct,
+        'zero_if_small': False
+    }
+
+
+def get_scan_kd_config(user_id):
+    threshold_pct = float(request.args.get('kd_threshold_pct', get_user_setting_value(user_id, 'kd-strict-threshold-pct', 0) or 0) or 0)
+    return {
+        'mode': 'strict',
+        'threshold_pct': threshold_pct,
+        'zero_if_small': False
+    }
+
+
+def apply_kd_config_to_cached_item(item, kd_config):
+    if not item:
+        return item
+
+    indicators = dict(item.get('indicators', {}))
+    scores = dict(item.get('scores', {}))
+    metrics = dict(item.get('metrics', {}))
+    curr_k = indicators.get('k')
+    prev_k = indicators.get('prev_k')
+    curr_d = indicators.get('d')
+    prev_d = indicators.get('prev_d')
+
+    kd_score, change_pct, kd_entangled = resolve_kd_score(
+        curr_k,
+        prev_k,
+        curr_d,
+        prev_d,
+        mode=kd_config.get('mode', 'strict'),
+        zero_if_small=bool(kd_config.get('zero_if_small', False)),
+        threshold_pct=float(kd_config.get('threshold_pct', 0.0) or 0.0)
+    )
+
+    old_kd = int(scores.get('KD', 0))
+    old_total = int(scores.get('Total', item.get('score', 0) or 0))
+    new_total = old_total - old_kd + int(kd_score)
+    scores['KD'] = int(kd_score)
+    scores['Total'] = int(new_total)
+    metrics['kd_change_pct'] = round(float(change_pct), 4) if change_pct is not None else None
+
+    updated = dict(item)
+    updated['scores'] = scores
+    updated['metrics'] = metrics
+    updated['flags'] = dict(item.get('flags', {}))
+    updated['flags']['KD_entangled'] = bool(kd_entangled)
+    updated['score'] = int(new_total)
+    return updated
+
+
+def apply_macd_config_to_cached_item(item, macd_config):
+    if not item:
+        return item
+
+    indicators = dict(item.get('indicators', {}))
+    scores = dict(item.get('scores', {}))
+    metrics = dict(item.get('metrics', {}))
+    curr_osc = indicators.get('osc')
+    prev_osc = indicators.get('prev_osc')
+
+    macd_score, change_pct = resolve_macd_score(
+        curr_osc,
+        prev_osc,
+        mode=macd_config.get('mode', 'strict'),
+        zero_if_small=bool(macd_config.get('zero_if_small', False)),
+        threshold_pct=float(macd_config.get('threshold_pct', 0.0) or 0.0)
+    )
+
+    old_macd = int(scores.get('MACD', 0))
+    old_total = int(scores.get('Total', item.get('score', 0) or 0))
+    new_total = old_total - old_macd + int(macd_score)
+    scores['MACD'] = int(macd_score)
+    scores['Total'] = int(new_total)
+    metrics['macd_change_pct'] = round(float(change_pct), 4) if change_pct is not None else None
+
+    updated = dict(item)
+    updated['scores'] = scores
+    updated['metrics'] = metrics
+    updated['score'] = int(new_total)
+    return updated
+
+
+def get_latest_item_with_configs(symbol, timeframe, macd_config=None, kd_config=None):
+    history = get_or_build_15d_scores(symbol, timeframe)
+    latest = history[-1] if history else None
+    latest_indicators = latest.get('indicators', {}) if latest else {}
+    needs_rebuild = latest and (
+        latest_indicators.get('osc') is None or
+        latest_indicators.get('prev_k') is None or
+        latest_indicators.get('d') is None or
+        latest_indicators.get('prev_d') is None
+    )
+    if needs_rebuild:
+        rebuilt = compute_recent_scores(symbol, timeframe=timeframe, days=15)
+        if rebuilt:
+            write_cached_scores(symbol, normalize_timeframe(timeframe), datetime.now().strftime('%Y-%m-%d'), rebuilt)
+            latest = rebuilt[-1]
+    if latest and kd_config:
+        latest = apply_kd_config_to_cached_item(latest, kd_config)
+    if latest and macd_config:
+        latest = apply_macd_config_to_cached_item(latest, macd_config)
+    return latest
+
+
+@app.before_request
+def require_login_for_app():
+    ensure_user_tables()
+    purge_inactive_users(days=30)
+    path = request.path or '/'
+    public_paths = {
+        '/login',
+        '/register',
+        '/healthz',
+        '/api/auth/login',
+        '/api/auth/register'
+    }
+
+    if path.startswith('/static/'):
+        return
+
+    if path in public_paths:
+        return
+
+    if current_user_id():
+        if is_session_expired():
+            session.clear()
+            if path.startswith('/api/'):
+                return jsonify({
+                    "error": "登入已失效，請重新登入",
+                    "login_required": True,
+                    "session_expired": True
+                }), 401
+            return redirect(url_for('login_page'))
+        return
+
+    if path.startswith('/api/'):
+        return jsonify({"error": "未登入", "login_required": True}), 401
+
+    return redirect(url_for('login_page'))
+
+
+def normalize_timeframe(timeframe):
+    tf = str(timeframe or '1d').strip().lower()
+
+    # TradingView 常見輸入（5/15/60/D/W/M）與舊別名一律正規化
+    alias_map = {
+        '5': '5m',
+        '15': '15m',
+        '60': '1h',
+        '10': '15m',  # yfinance 不支援 10m，降階到 15m
+        '10m': '15m',
+        'd': '1d',
+        'day': '1d',
+        'daily': '1d',
+        'w': '1wk',
+        '1w': '1wk',
+        'week': '1wk',
+        'weekly': '1wk',
+        'weekly-old': '1wk',
+        'm': '1mo',
+        'month': '1mo',
+        'monthly': '1mo',
+        'mth': '1mo',
+        '60m': '1h'
+    }
+    if tf in alias_map:
+        return alias_map[tf]
+    return tf
+
+
+def repair_mojibake_text(value):
+    if not isinstance(value, str):
+        return value
+
+    try:
+        repaired = value.encode('latin1').decode('utf-8')
+        return repaired if repaired else value
+    except Exception:
+        return value
+
+
+def ensure_watchlist_order_column():
+    ensure_user_tables()
+
+
+def ensure_score_cache_table():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS stock_score_cache_15d (
+            cache_day TEXT,
+            symbol TEXT,
+            timeframe TEXT,
+            trade_date TEXT,
+            total_score INTEGER,
+            ma_score INTEGER,
+            kd_score INTEGER,
+            rsi_score INTEGER,
+            macd_score INTEGER,
+            vol_score INTEGER,
+            bias_pct REAL,
+            close_price REAL,
+            PRIMARY KEY (cache_day, symbol, timeframe, trade_date)
+        )
+    ''')
+    cursor.execute("PRAGMA table_info(stock_score_cache_15d)")
+    cols = [row[1] for row in cursor.fetchall()]
+    if 'macd_osc' not in cols:
+        cursor.execute("ALTER TABLE stock_score_cache_15d ADD COLUMN macd_osc REAL")
+    if 'macd_prev_osc' not in cols:
+        cursor.execute("ALTER TABLE stock_score_cache_15d ADD COLUMN macd_prev_osc REAL")
+    if 'kd_k' not in cols:
+        cursor.execute("ALTER TABLE stock_score_cache_15d ADD COLUMN kd_k REAL")
+    if 'kd_prev_k' not in cols:
+        cursor.execute("ALTER TABLE stock_score_cache_15d ADD COLUMN kd_prev_k REAL")
+    if 'kd_d' not in cols:
+        cursor.execute("ALTER TABLE stock_score_cache_15d ADD COLUMN kd_d REAL")
+    if 'kd_prev_d' not in cols:
+        cursor.execute("ALTER TABLE stock_score_cache_15d ADD COLUMN kd_prev_d REAL")
+    if 'kd_change_pct' not in cols:
+        cursor.execute("ALTER TABLE stock_score_cache_15d ADD COLUMN kd_change_pct REAL")
+    conn.commit()
+    conn.close()
+
+
+def read_cached_scores(symbol, timeframe):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+         SELECT trade_date, total_score, ma_score, kd_score, rsi_score, macd_score, vol_score, bias_pct, close_price
+             , macd_osc, macd_prev_osc, kd_k, kd_prev_k, kd_d, kd_prev_d, kd_change_pct
+        FROM stock_score_cache_15d
+        WHERE symbol = ? AND timeframe = ?
+        ORDER BY trade_date DESC, cache_day DESC
+        LIMIT 15
+    ''', (symbol, timeframe))
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return []
+
+    items = [
+        {
+            "date": r["trade_date"],
+            "score": int(r["total_score"]),
+            "scores": {
+                "MA": int(r["ma_score"]),
+                "KD": int(r["kd_score"]),
+                "RSI": int(r["rsi_score"]),
+                "MACD": int(r["macd_score"]),
+                "Volume": int(r["vol_score"]),
+                "Total": int(r["total_score"])
+            },
+            "metrics": {
+                "bias_pct": float(r["bias_pct"]) if r["bias_pct"] is not None else None,
+                "kd_change_pct": float(r["kd_change_pct"]) if r["kd_change_pct"] is not None else None
+            },
+            "close_price": float(r["close_price"]) if r["close_price"] is not None else None,
+            "indicators": {
+                "k": float(r["kd_k"]) if r["kd_k"] is not None else None,
+                "prev_k": float(r["kd_prev_k"]) if r["kd_prev_k"] is not None else None,
+                "d": float(r["kd_d"]) if r["kd_d"] is not None else None,
+                "prev_d": float(r["kd_prev_d"]) if r["kd_prev_d"] is not None else None,
+                "osc": float(r["macd_osc"]) if r["macd_osc"] is not None else None,
+                "prev_osc": float(r["macd_prev_osc"] ) if r["macd_prev_osc"] is not None else None
+            }
+        }
+        for r in rows
+    ]
+
+    return list(reversed(items))
+
+
+def write_cached_scores(symbol, timeframe, cache_day, items):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        DELETE FROM stock_score_cache_15d
+        WHERE cache_day = ? AND symbol = ? AND timeframe = ?
+    ''', (cache_day, symbol, timeframe))
+
+    for item in items:
+        scores = item.get("scores", {})
+        metrics = item.get("metrics", {})
+        cursor.execute('''
+            INSERT OR REPLACE INTO stock_score_cache_15d
+            (cache_day, symbol, timeframe, trade_date, total_score, ma_score, kd_score, rsi_score, macd_score, vol_score, bias_pct, close_price, macd_osc, macd_prev_osc, kd_k, kd_prev_k, kd_d, kd_prev_d, kd_change_pct)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            cache_day,
+            symbol,
+            timeframe,
+            item.get("date"),
+            int(scores.get("Total", 0)),
+            int(scores.get("MA", 0)),
+            int(scores.get("KD", 0)),
+            int(scores.get("RSI", 0)),
+            int(scores.get("MACD", 0)),
+            int(scores.get("Volume", 0)),
+            metrics.get("bias_pct"),
+            item.get("close_price"),
+            item.get("indicators", {}).get("osc"),
+            item.get("indicators", {}).get("prev_osc"),
+            item.get("indicators", {}).get("k"),
+            item.get("indicators", {}).get("prev_k"),
+            item.get("indicators", {}).get("d"),
+            item.get("indicators", {}).get("prev_d"),
+            item.get("metrics", {}).get("kd_change_pct")
+        ))
+
+    # 每檔每級別只保留最新 15 筆交易日分數，避免快取無限增長
+    cursor.execute('''
+        DELETE FROM stock_score_cache_15d
+        WHERE rowid IN (
+            SELECT rowid
+            FROM stock_score_cache_15d
+            WHERE symbol = ? AND timeframe = ?
+            ORDER BY trade_date DESC, cache_day DESC
+            LIMIT -1 OFFSET 15
+        )
+    ''', (symbol, timeframe))
+
+    conn.commit()
+    conn.close()
+
+
+def get_or_build_15d_scores(symbol, timeframe):
+    ensure_score_cache_table()
+    tf = normalize_timeframe(timeframe)
+    cache_day = datetime.now().strftime('%Y-%m-%d')
+
+    cached = read_cached_scores(symbol, tf)
+    latest = cached[-1] if cached else None
+    latest_indicators = latest.get('indicators', {}) if latest else {}
+    latest_has_kd_fields = latest and latest_indicators.get('prev_k') is not None and latest_indicators.get('d') is not None and latest_indicators.get('prev_d') is not None and latest.get('metrics', {}).get('kd_change_pct') is not None
+    if len(cached) >= 15 and latest_has_kd_fields:
+        return cached[-15:]
+
+    computed = compute_recent_scores(symbol, timeframe=tf, days=15)
+    if computed:
+        write_cached_scores(symbol, tf, cache_day, computed)
+        return computed
+
+    return cached
+
+# --------------------------------------------------------
+# 網頁首頁
+# --------------------------------------------------------
+@app.route('/')
+def index():
+    user_id = current_user_id()
+    reminder_seen = _is_truthy(get_user_setting_value(user_id, 'post-deploy-checklist-reminder-seen', False))
+    return render_template(
+        'index.html',
+        username=session.get('username'),
+        show_post_deploy_checklist_reminder=(not reminder_seen)
+    )
+
+
+@app.route('/healthz', methods=['GET'])
+def healthz():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT 1')
+        cursor.fetchone()
+        conn.close()
+        return jsonify({"ok": True, "db": "ok"}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route('/api/auth/login', methods=['GET', 'POST'])
+def login_page():
+    if request.method == 'GET':
+        if current_user_id():
+            return redirect(url_for('index'))
+        return render_template('login.html', error=None, active_tab='login')
+
+    username = (request.form.get('username') or '').strip()
+    username_lower = normalize_username(username)
+    password = request.form.get('password') or ''
+
+    if not username or not password:
+        return render_template('login.html', error='請輸入帳號與密碼', active_tab='login')
+
+    if not is_ascii_printable(username) or not is_ascii_printable(password):
+        return render_template('login.html', error='帳號與密碼僅限半形英文、數字、符號', active_tab='login')
+
+    if not is_valid_username(username):
+        return render_template('login.html', error='帳號格式錯誤：僅限英文與數字', active_tab='login')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username, password_hash FROM users WHERE username_lower = ?", (username_lower,))
+    row = cursor.fetchone()
+
+    if not row or not check_password_hash(row['password_hash'], password):
+        conn.close()
+        return render_template('login.html', error='帳號或密碼錯誤', active_tab='login')
+
+    cursor.execute("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?", (int(row['id']),))
+    conn.commit()
+    conn.close()
+
+    session['user_id'] = int(row['id'])
+    session['username'] = row['username']
+    mark_session_login_start()
+    return redirect(url_for('index'))
+
+
+@app.route('/api/auth/register', methods=['POST'])
+def register_page():
+    username = (request.form.get('username') or '').strip()
+    username_lower = normalize_username(username)
+    password = request.form.get('password') or ''
+    confirm = request.form.get('confirm_password') or ''
+
+    if not username or not password:
+        return render_template('login.html', error='請輸入帳號與密碼', active_tab='register')
+
+    if not is_ascii_printable(username) or not is_ascii_printable(password) or not is_ascii_printable(confirm):
+        return render_template('login.html', error='帳號與密碼僅限半形英文、數字、符號', active_tab='register')
+
+    if not is_valid_username(username):
+        return render_template('login.html', error='帳號格式錯誤：僅限英文與數字', active_tab='register')
+
+    if password != confirm:
+        return render_template('login.html', error='兩次密碼不一致', active_tab='register')
+
+    if len(password) < 6:
+        return render_template('login.html', error='密碼至少 6 碼', active_tab='register')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE username_lower = ?", (username_lower,))
+    if cursor.fetchone():
+        conn.close()
+        return render_template('login.html', error='帳號已存在（不分大小寫）', active_tab='register')
+
+    pw_hash = generate_password_hash(password)
+    cursor.execute(
+        "INSERT INTO users (username, username_lower, password_hash, last_login_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+        (username, username_lower, pw_hash)
+    )
+    conn.commit()
+    user_id = cursor.lastrowid
+    conn.close()
+
+    session['user_id'] = int(user_id)
+    session['username'] = username
+    mark_session_login_start()
+    return redirect(url_for('index'))
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_logout():
+    session.clear()
+    return jsonify({"success": True})
+
+
+@app.route('/api/auth/delete-account', methods=['POST'])
+def api_delete_account():
+    try:
+        user_id = current_user_id()
+        if not user_id:
+            return jsonify({"success": False, "error": "未登入"}), 401
+
+        payload = request.get_json(silent=True) or {}
+        password = payload.get('password', '')
+
+        if not password:
+            return jsonify({"success": False, "error": "請輸入密碼"}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, password_hash FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            session.clear()
+            return jsonify({"success": False, "error": "帳號不存在"}), 404
+
+        if not check_password_hash(row['password_hash'], password):
+            conn.close()
+            return jsonify({"success": False, "error": "密碼錯誤"}), 403
+
+        cursor.execute("DELETE FROM user_watchlist WHERE user_id = ?", (user_id,))
+        cursor.execute("DELETE FROM user_settings WHERE user_id = ?", (user_id,))
+        cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+
+        session.clear()
+        return jsonify({"success": True, "message": "帳號已刪除並已登出"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# --------------------------------------------------------
+# API 1: 取得大盤最新診斷分數與原始價格
+# --------------------------------------------------------
+@app.route('/api/market/latest', methods=['GET'])
+def get_latest_market():
+    try:
+        conn = get_db_connection()
+        # 🔥 修正：使用 JOIN 同時抓取價格(raw)與分數(scores)
+        cursor = conn.execute("""
+            SELECT 
+                s.*, 
+                r.taiex_price, r.twd_fx 
+            FROM market_scores s
+            JOIN market_raw r ON s.date = r.date
+            ORDER BY s.date DESC LIMIT 1
+        """)
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row is None:
+            return jsonify({"error": "目前沒有大盤資料"}), 404
+        
+        payload = dict(row)
+        score_c_total = payload.get('score_c_total')
+        if score_c_total is not None:
+            payload['diagnosis'] = generate_diagnosis(int(score_c_total))
+        else:
+            payload['diagnosis'] = repair_mojibake_text(payload.get('diagnosis'))
+        return jsonify(payload)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --------------------------------------------------------
+# API 2: 取得特定個股的最新分數
+# --------------------------------------------------------
+@app.route('/api/stock/<symbol>', methods=['GET'])
+def get_stock_score(symbol):
+    timeframe = request.args.get('timeframe', 'daily') 
+    try:
+        conn = get_db_connection()
+        cursor = conn.execute('''
+            SELECT * FROM stock_scores 
+            WHERE symbol = ? AND timeframe = ?
+            ORDER BY date DESC LIMIT 1
+        ''', (symbol, timeframe))
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return jsonify({"error": f"找不到代號 {symbol} 的資料"}), 404
+        return jsonify(dict(row))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --------------------------------------------------------
+# API 3: 診斷雷達掃描結果
+# --------------------------------------------------------
+@app.route('/api/scan-radar', methods=['GET'])
+def api_scan_watchlist():
+    """掃描自選清單中的所有股票"""
+    try:
+        user_id = current_user_id()
+        if not user_id:
+            return jsonify({"error": "未登入"}), 401
+        
+        # 獲取用戶的自選清單
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT symbol FROM user_watchlist WHERE user_id = ? ORDER BY COALESCE(sort_order, 999999), added_at DESC",
+            (user_id,)
+        )
+        watchlist = [row['symbol'] for row in cursor.fetchall()]
+        conn.close()
+        
+        if not watchlist:
+            return jsonify({
+                "count": 0,
+                "data": []
+            }), 200
+        
+        # 獲取用戶的掃描配置（嚴格版）
+        macd_config = get_scan_macd_config(user_id)
+        kd_config = get_scan_kd_config(user_id)
+        
+        # 掃描每支股票
+        data = []
+        for symbol in watchlist:
+            try:
+                latest = get_latest_item_with_configs(symbol, '1d', macd_config=macd_config, kd_config=kd_config)
+                if latest:
+                    scores = latest.get('scores', {})
+                    metrics = latest.get('metrics', {})
+                    data.append({
+                        "symbol": symbol,
+                        "ma_score": scores.get('MA'),
+                        "kd_score": scores.get('KD'),
+                        "rsi_score": scores.get('RSI'),
+                        "macd_score": scores.get('MACD'),
+                        "vol_score": scores.get('Volume'),
+                        "total_score": scores.get('Total'),
+                        "bias_pct": round(float(metrics.get('bias_pct', 0)), 2) if metrics.get('bias_pct') is not None else None
+                    })
+            except Exception as e:
+                print(f"⚠️ 掃描 {symbol} 失敗: {e}")
+                continue
+        
+        # 新增中文名稱
+        import twstock
+        for item in data:
+            sym = item["symbol"]
+            try:
+                if sym in twstock.codes:
+                    item["name"] = twstock.codes[sym].name
+                else:
+                    item["name"] = "未知標的"
+            except Exception:
+                item["name"] = "個股"
+        
+        # 按總分排序
+        data.sort(key=lambda x: x.get('total_score', 0) if x.get('total_score') is not None else 0, reverse=True)
+        
+        return jsonify({
+            "count": len(data),
+            "data": data
+        }), 200
+
+    except Exception as e:
+        print(f"❌ 掃描自選清單失敗: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/scan/0050', methods=['GET'])
+def api_scan_radar():
+    try:
+        user_id = current_user_id()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT MAX(date) FROM stock_scores")
+        latest_date = cursor.fetchone()[0]
+        
+        if not latest_date:
+            conn.close()
+            return jsonify({"data": []})
+        
+        # 撈出該日期所有的個股資料
+        cursor.execute('''
+            SELECT symbol, total_score, macd_score 
+            FROM stock_scores 
+            WHERE date = ?
+            ORDER BY total_score DESC, symbol ASC
+        ''', (latest_date,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        macd_config = get_scan_macd_config(user_id)
+        kd_config = get_scan_kd_config(user_id)
+
+        # 1. 先把資料庫撈出來的資料打包成清單，KD/MACD 與總分依嚴格版設定重算
+        data = []
+        for r in rows:
+            symbol = r['symbol']
+            latest = get_latest_item_with_configs(symbol, '1d', macd_config=macd_config, kd_config=kd_config)
+            total_score = latest.get('scores', {}).get('Total', r['total_score']) if latest else r['total_score']
+            macd_score = latest.get('scores', {}).get('MACD', r['macd_score']) if latest else r['macd_score']
+            bias = latest.get('metrics', {}).get('bias_pct') if latest else None
+            data.append({"symbol": symbol, "total_score": total_score, "macd_score": macd_score, "bias_pct": round(float(bias), 2) if bias is not None else None})
+
+        # 2. 🌟 啟動中文翻譯機，幫每一檔股票掛上名牌
+        import twstock
+        for item in data:
+            sym = item["symbol"]
+            try:
+                if sym in twstock.codes:
+                    item["name"] = twstock.codes[sym].name
+                else:
+                    item["name"] = "未知標的"
+            except Exception:
+                item["name"] = "個股"
+
+        # 3. 回傳包含中文名稱的完整資料給前端
+        return jsonify({
+            "date": latest_date,
+            "count": len(data),
+            "data": data
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# --------------------------------------------------------
+# API 4: 一鍵即時算分
+# --------------------------------------------------------
+@app.route('/api/tools/instant/<symbol>', methods=['GET'])
+def api_instant_score(symbol):
+    try:
+        # 從查詢參數中取得時間週期，預設為 1d
+        timeframe = request.args.get('tf', request.args.get('timeframe', '1d'))
+        timeframe = normalize_timeframe(timeframe)
+
+        live_result = get_instant_analysis(symbol, timeframe=timeframe)
+        history = get_or_build_15d_scores(symbol, timeframe)
+        if live_result:
+            result = dict(live_result)
+        elif history:
+            latest = history[-1]
+            result = {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "scores": latest.get("scores", {}),
+                "metrics": latest.get("metrics", {}),
+                "indicators": latest.get("indicators", {}),
+                "current_price": latest.get("close_price"),
+                "date": latest.get("date")
+            }
+
+        if not result:
+            return jsonify({"error": f"無法取得即時資料 (tf={timeframe})"}), 404
+
+        # 動態抓取股票名稱
+        if 'name' not in result:
+            try:
+                import twstock
+                if symbol in twstock.codes:
+                    result['name'] = twstock.codes[symbol].name
+                else:
+                    result['name'] = "未知標的"
+            except ImportError:
+                print("⚠️ 尚未安裝 twstock，請在終端機執行: pip install twstock")
+                result['name'] = "個股"
+            except Exception as e:
+                print(f"API 4 名稱抓取失敗: {e}")
+                result['name'] = "個股"
+
+        response = jsonify(result)
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --------------------------------------------------------
+# API 5: 自選清單批次即時算分（逐檔獨立運算）
+# --------------------------------------------------------
+@app.route('/api/watchlist/instant-scores', methods=['GET'])
+def api_watchlist_instant_scores():
+    try:
+        user_id = current_user_id()
+        if not user_id:
+            return jsonify({"error": "未登入"}), 401
+
+        ensure_watchlist_order_column()
+        timeframe = request.args.get('tf', request.args.get('timeframe', '1d'))
+        timeframe = normalize_timeframe(timeframe)
+        macd_config = get_scan_macd_config(user_id)
+        kd_config = get_scan_kd_config(user_id)
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT symbol FROM user_watchlist WHERE user_id = ? ORDER BY COALESCE(sort_order, 999999), added_at DESC", (user_id,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        results = []
+
+        try:
+            import twstock
+            stock_codes = twstock.codes
+        except Exception:
+            stock_codes = {}
+
+        for row in rows:
+            symbol = row['symbol']
+            latest = get_latest_item_with_configs(symbol, timeframe, macd_config=macd_config, kd_config=kd_config)
+            if latest:
+                result = {
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "scores": latest.get("scores", {}),
+                    "metrics": latest.get("metrics", {}),
+                    "current_price": latest.get("close_price"),
+                    "date": latest.get("date")
+                }
+            else:
+                result = get_instant_analysis(symbol, timeframe=timeframe)
+
+            if not result:
+                results.append({
+                    "symbol": symbol,
+                    "name": stock_codes[symbol].name if symbol in stock_codes else "",
+                    "timeframe": timeframe,
+                    "error": f"無法取得即時資料 (tf={timeframe})"
+                })
+                continue
+
+            result = dict(result)
+            result['symbol'] = symbol
+            result['timeframe'] = timeframe
+
+            if 'name' not in result or not result['name']:
+                result['name'] = stock_codes[symbol].name if symbol in stock_codes else ""
+
+            results.append(result)
+
+        response = jsonify({
+            "timeframe": timeframe,
+            "count": len(results),
+            "results": results
+        })
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --------------------------------------------------------
+# API 6: 獲取個股 15 日歷史分數 (趨勢圖使用)
+# --------------------------------------------------------
+@app.route('/api/tools/history/<symbol>', methods=['GET'])
+def api_stock_history(symbol):
+    try:
+        timeframe = request.args.get('timeframe', request.args.get('tf', '1d'))
+        timeframe = normalize_timeframe(timeframe)
+        history_items = get_or_build_15d_scores(symbol, timeframe)
+        history_data = [{"date": item["date"], "score": item["score"]} for item in history_items]
+        return jsonify(history_data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --------------------------------------------------------
+# API 6-2: 獲取個股 15 日分數 + K線 + 指標明細
+# --------------------------------------------------------
+@app.route('/api/tools/history-detail/<symbol>', methods=['GET'])
+def api_stock_history_detail(symbol):
+    try:
+        timeframe = request.args.get('timeframe', request.args.get('tf', '1d'))
+        timeframe = normalize_timeframe(timeframe)
+        limit = int(request.args.get('limit', 120))
+        limit = max(30, min(limit, 240))
+        history_items = compute_recent_scores(symbol, timeframe, days=limit)
+        return jsonify({
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "count": len(history_items),
+            "data": history_items
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/tools/ohlcv/<symbol>', methods=['GET'])
+def api_stock_ohlcv(symbol):
+    """取得個股 K線資料（OHLCV）"""
+    try:
+        timeframe = request.args.get('timeframe', request.args.get('tf', '1d'))
+        timeframe = normalize_timeframe(timeframe)
+        limit = int(request.args.get('limit', 120))
+        limit = max(30, min(limit, 240))
+        
+        import yfinance
+        
+        # 正規化後再映射到 yfinance interval
+        interval_map = {
+            '1m': '1m',
+            '5m': '5m',
+            '15m': '15m',
+            '30m': '30m',
+            '1h': '60m',
+            '1d': '1d',
+            '1wk': '1wk',
+            '1mo': '1mo'
+        }
+        yf_timeframe = interval_map.get(timeframe, '1d')
+
+        # 分K級別有下載天數限制，避免超過 Yahoo 可用範圍
+        period_map = {
+            '1m': '7d',
+            '5m': '60d',
+            '15m': '60d',
+            '30m': '60d',
+            '1h': '730d',
+            '1wk': '10y',
+            '1mo': '20y'
+        }
+        yf_period = period_map.get(timeframe, f'{limit+10}d')
+        
+        # 下載資料
+        df = yfinance.download(f'{symbol}.TW', period=yf_period, interval=yf_timeframe, progress=False)
+        
+        if df.empty:
+            return jsonify({"error": f"無法獲取 {symbol} 的數據"}), 404
+        
+        # 處理 MultiIndex 列名
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        
+        # 僅取最後 limit 筆
+        df = df.tail(limit)
+        
+        # 轉換為可序列化的格式
+        ohlcv_data = []
+        for idx, row in df.iterrows():
+            try:
+                timestamp = int(idx.timestamp()) if hasattr(idx, 'timestamp') else int(pd.Timestamp(idx).timestamp())
+            except:
+                timestamp = 0
+            
+            ohlcv_data.append({
+                'timestamp': timestamp,
+                'date': str(idx.date()) if hasattr(idx, 'date') else str(idx)[:10],
+                'open': float(row['Open']) if pd.notna(row['Open']) else None,
+                'high': float(row['High']) if pd.notna(row['High']) else None,
+                'low': float(row['Low']) if pd.notna(row['Low']) else None,
+                'close': float(row['Close']) if pd.notna(row['Close']) else None,
+                'volume': int(row['Volume']) if pd.notna(row['Volume']) else 0
+            })
+        
+        return jsonify({
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "count": len(ohlcv_data),
+            "data": ohlcv_data
+        }), 200
+
+    except Exception as e:
+        print(f"❌ 獲取 {symbol} K線數據失敗: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# --------------------------------------------------------
+# API 7-9: 自選清單管理 (Watchlist)
+# --------------------------------------------------------
+@app.route('/api/watchlist', methods=['GET'])
+def get_watchlist():
+    try:
+        user_id = current_user_id()
+        if not user_id:
+            return jsonify({"error": "未登入"}), 401
+
+        ensure_watchlist_order_column()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT symbol FROM user_watchlist WHERE user_id = ? ORDER BY COALESCE(sort_order, 999999), added_at DESC", (user_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # 準備回傳帶有名稱的物件清單
+        watchlist_data = []
+        import twstock
+        
+        for r in rows:
+            symbol = r['symbol']
+            try:
+                if symbol in twstock.codes:
+                    name = twstock.codes[symbol].name
+                else:
+                    name = "" 
+            except:
+                name = ""
+                
+            watchlist_data.append({
+                "symbol": symbol,
+                "name": name
+            })
+            
+        return jsonify(watchlist_data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/watchlist/add/<symbol>', methods=['POST'])
+def add_watchlist(symbol):
+    try:
+        user_id = current_user_id()
+        if not user_id:
+            return jsonify({"success": False, "error": "未登入"}), 401
+
+        ensure_watchlist_order_column()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT symbol FROM user_watchlist WHERE user_id = ? AND symbol = ?", (user_id, symbol))
+        if not cursor.fetchone():
+            cursor.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM user_watchlist WHERE user_id = ?", (user_id,))
+            next_order = cursor.fetchone()[0]
+            cursor.execute("INSERT INTO user_watchlist (user_id, symbol, sort_order) VALUES (?, ?, ?)", (user_id, symbol, next_order))
+            conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": "已加入清單"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/watchlist/remove/<symbol>', methods=['DELETE'])
+def remove_watchlist(symbol):
+    try:
+        user_id = current_user_id()
+        if not user_id:
+            return jsonify({"success": False, "error": "未登入"}), 401
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM user_watchlist WHERE user_id = ? AND symbol = ?", (user_id, symbol))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/watchlist/reorder', methods=['POST'])
+def reorder_watchlist():
+    try:
+        user_id = current_user_id()
+        if not user_id:
+            return jsonify({"success": False, "error": "未登入"}), 401
+
+        ensure_watchlist_order_column()
+        payload = request.get_json(silent=True) or {}
+        symbols = payload.get('symbols', [])
+        if not isinstance(symbols, list) or not symbols:
+            return jsonify({"success": False, "error": "symbols 不可為空"}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        for i, symbol in enumerate(symbols, start=1):
+            cursor.execute("UPDATE user_watchlist SET sort_order = ? WHERE user_id = ? AND symbol = ?", (i, user_id, symbol))
+
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "count": len(symbols)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/user/settings', methods=['GET'])
+def api_get_user_settings():
+    try:
+        user_id = current_user_id()
+        if not user_id:
+            return jsonify({"error": "未登入"}), 401
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT setting_key, setting_value FROM user_settings WHERE user_id = ?", (user_id,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        settings = {}
+        for row in rows:
+            key = row['setting_key']
+            raw_val = row['setting_value']
+            try:
+                settings[key] = json.loads(raw_val)
+            except Exception:
+                settings[key] = raw_val
+
+        return jsonify({"settings": settings})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/user/settings', methods=['POST'])
+def api_save_user_settings():
+    try:
+        user_id = current_user_id()
+        if not user_id:
+            return jsonify({"success": False, "error": "未登入"}), 401
+
+        payload = request.get_json(silent=True) or {}
+        settings = payload.get('settings', {})
+        if not isinstance(settings, dict):
+            return jsonify({"success": False, "error": "settings 格式錯誤"}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        for key, value in settings.items():
+            if not isinstance(key, str) or not key.strip():
+                continue
+            val_str = json.dumps(value, ensure_ascii=False)
+            cursor.execute('''
+                INSERT INTO user_settings (user_id, setting_key, setting_value, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, setting_key)
+                DO UPDATE SET setting_value=excluded.setting_value, updated_at=CURRENT_TIMESTAMP
+            ''', (user_id, key.strip(), val_str))
+
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "count": len(settings)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/user/post-deploy-checklist/complete', methods=['POST'])
+def api_complete_post_deploy_checklist():
+    try:
+        user_id = current_user_id()
+        if not user_id:
+            return jsonify({"success": False, "error": "未登入"}), 401
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO user_settings (user_id, setting_key, setting_value, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id, setting_key)
+            DO UPDATE SET setting_value=excluded.setting_value, updated_at=CURRENT_TIMESTAMP
+        ''', (user_id, 'post-deploy-checklist-reminder-seen', json.dumps(True)))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# --------------------------------------------------------
+# API 11: 矩陣式批次回測 (接收前端 POST 請求)
+# --------------------------------------------------------
+@app.route('/api/backtest/batch', methods=['POST'])
+def api_batch_backtest():
+    try:
+        data = request.get_json()
+        
+        # 1. 解析前端傳來的參數
+        symbols = data.get('symbols', [])
+        capital = float(data.get('capital', 100)) * 10000
+        unit = data.get('unit', 'lot')
+        start_time = data.get('start')
+        end_time = data.get('end')
+        level = data.get('level', '1d')
+        fee_rate = float(data.get('fee', 1.425)) / 1000
+        tax_rate = float(data.get('tax', 3.0)) / 1000
+        
+        buy_scores = data.get('buy_scores', [])
+        sell_scores = data.get('sell_scores', [])
+
+        if not symbols:
+            return jsonify({"error": "沒有收到要回測的股票清單"}), 400
+
+        print(f"🚀 啟動回測引擎: {len(symbols)} 檔標的, 級別: {level}, 單位: {unit}")
+        print(f"💰 本金: {capital}, 買入策略: {buy_scores}, 賣出策略: {sell_scores}")
+        print(f"📅 時間: {start_time} to {end_time}")
+
+        # 2. 準備回傳的結果陣列
+        results = []
+
+        # 3. 針對清單中的每一檔股票執行回測
+        for symbol in symbols:
+            stock_result = run_matrix_backtest(
+                symbol=symbol,
+                start_time=start_time,
+                end_time=end_time,
+                level=level,
+                capital=capital,
+                unit=unit,
+                fee_rate=fee_rate,
+                tax_rate=tax_rate,
+                buy_scores=buy_scores,
+                sell_scores=sell_scores
+            )
+            
+            if stock_result:
+                results.append(stock_result)
+
+        # 4. 回傳給前端
+        return jsonify({"results": results})
+
+    except Exception as e:
+        print(f"❌ 回測路由發生錯誤: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# ========================================================
+# 調整記錄 API（記錄 KD/MACD 手動調整）
+# ========================================================
+
+@app.route('/api/log-adjustment', methods=['POST'])
+def api_log_adjustment():
+    """記錄使用者對 KD/MACD 指標的手動調整操作"""
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({"error": "使用者未登入"}), 401
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "請求體為空"}), 400
+
+        symbol = data.get('symbol', '').upper()
+        indicator_type = data.get('indicator_type', '').upper()
+        timeframe = data.get('timeframe', '')
+        change_pct = data.get('change_pct')
+        original_score = data.get('original_score')
+        adjusted_score = data.get('adjusted_score')
+
+        if not symbol or indicator_type not in ['MACD', 'KD']:
+            return jsonify({"error": "缺少或無效的參數"}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO indicator_adjustment_log
+            (user_id, symbol, indicator_type, timeframe, change_pct, original_score, adjusted_score, adjusted_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (user_id, symbol, indicator_type, timeframe, change_pct, original_score, adjusted_score))
+        conn.commit()
+        conn.close()
+
+        return jsonify({"success": True, "message": f"已記錄 {symbol} 的 {indicator_type} 調整"}), 200
+
+    except Exception as e:
+        print(f"❌ 記錄調整時出錯: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/adjustment-history', methods=['GET'])
+def api_adjustment_history():
+    """查詢使用者的調整歷史記錄（支援過濾）"""
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({"error": "使用者未登入"}), 401
+
+        # 查詢參數
+        indicator_filter = request.args.get('indicator_filter', '')
+        symbol_filter = request.args.get('symbol_filter', '').upper()
+        limit = int(request.args.get('limit', 500))
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        query = 'SELECT * FROM indicator_adjustment_log WHERE user_id = ?'
+        params = [user_id]
+
+        if indicator_filter and indicator_filter.upper() in ['MACD', 'KD']:
+            query += ' AND indicator_type = ?'
+            params.append(indicator_filter.upper())
+
+        if symbol_filter:
+            query += ' AND symbol = ?'
+            params.append(symbol_filter)
+
+        query += ' ORDER BY adjusted_at DESC LIMIT ?'
+        params.append(limit)
+
+        cursor.execute(query, params)
+        records = cursor.fetchall()
+        conn.close()
+
+        result = []
+        for record in records:
+            result.append({
+                'id': record['id'],
+                'symbol': record['symbol'],
+                'indicator_type': record['indicator_type'],
+                'timeframe': record['timeframe'],
+                'change_pct': record['change_pct'],
+                'original_score': record['original_score'],
+                'adjusted_score': record['adjusted_score'],
+                'adjusted_at': record['adjusted_at']
+            })
+
+        return jsonify({"records": result, "count": len(result)}), 200
+
+    except Exception as e:
+        print(f"❌ 查詢調整歷史時出錯: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ========================================================
+# 數據備份 API
+# ========================================================
+
+@app.route('/api/backup-download', methods=['GET'])
+def api_backup_download():
+    """下載用戶所有數據（設定、自選清單、調整紀錄）"""
+    try:
+        import json
+        import io
+        import zipfile
+        from datetime import datetime
+        
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({"error": "使用者未登入"}), 401
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # 1. 查詢用戶設定
+        cursor.execute('SELECT setting_key, setting_value FROM user_settings WHERE user_id = ?', (user_id,))
+        settings = {}
+        for row in cursor.fetchall():
+            settings[row['setting_key']] = row['setting_value']
+
+        # 2. 查詢自選清單
+        cursor.execute('SELECT symbol, added_at FROM user_watchlist WHERE user_id = ? ORDER BY added_at DESC', (user_id,))
+        watchlist = [{'symbol': row['symbol'], 'added_at': row['added_at']} for row in cursor.fetchall()]
+
+        # 3. 查詢調整紀錄
+        cursor.execute('''
+            SELECT symbol, indicator_type, timeframe, change_pct, original_score, adjusted_score, adjusted_at
+            FROM indicator_adjustment_log
+            WHERE user_id = ?
+            ORDER BY adjusted_at DESC
+        ''', (user_id,))
+        adjustments = [
+            {
+                'symbol': row['symbol'],
+                'indicator_type': row['indicator_type'],
+                'timeframe': row['timeframe'],
+                'change_pct': row['change_pct'],
+                'original_score': row['original_score'],
+                'adjusted_score': row['adjusted_score'],
+                'adjusted_at': row['adjusted_at']
+            }
+            for row in cursor.fetchall()
+        ]
+
+        conn.close()
+
+        # 打包成 JSON
+        backup_data = {
+            'backup_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'user_id': user_id,
+            'settings': settings,
+            'watchlist': watchlist,
+            'adjustments': adjustments
+        }
+
+        # 創建 ZIP 文件
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # 添加 JSON 文件
+            zip_file.writestr('THE_FOX_backup.json', json.dumps(backup_data, ensure_ascii=False, indent=2))
+            # 添加 INFO 文件
+            info_text = f"""THE FOX 數據備份文件
+備份時間: {backup_data['backup_time']}
+用戶ID: {user_id}
+
+包含內容：
+1. 設定檔案 ({len(settings)} 項)
+2. 自選清單 ({len(watchlist)} 個股票)
+3. 調整紀錄 ({len(adjustments)} 筆調整)
+
+若要恢復，將此 ZIP 中的 JSON 文件的內容復製到新系統。
+"""
+            zip_file.writestr('README.txt', info_text)
+
+        zip_buffer.seek(0)
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"thefox_backup_{timestamp}.zip"
+
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        print(f"❌ 生成備份時出錯: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/backup-upload', methods=['POST'])
+def api_backup_upload():
+    """上傳備份文件，恢復用戶數據"""
+    try:
+        import json
+        import zipfile
+        
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({"error": "使用者未登入"}), 401
+
+        if 'file' not in request.files:
+            return jsonify({"error": "未選擇文件"}), 400
+
+        file = request.files['file']
+        if not file.filename:
+            return jsonify({"error": "文件名為空"}), 400
+
+        # 讀取 JSON 數據
+        backup_data = None
+        
+        if file.filename.endswith('.zip'):
+            # 從 ZIP 中提取 JSON
+            import io
+            zip_buffer = io.BytesIO(file.read())
+            with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
+                if 'THE_FOX_backup.json' in zip_file.namelist():
+                    with zip_file.open('THE_FOX_backup.json') as json_file:
+                        backup_data = json.loads(json_file.read().decode('utf-8'))
+                else:
+                    return jsonify({"error": "ZIP 中找不到 THE_FOX_backup.json"}), 400
+        elif file.filename.endswith('.json'):
+            # 直接讀取 JSON
+            backup_data = json.loads(file.read().decode('utf-8'))
+        else:
+            return jsonify({"error": "僅支持 .zip 或 .json 文件"}), 400
+
+        if not backup_data:
+            return jsonify({"error": "無效的備份文件"}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            # 1. 恢復設定
+            settings = backup_data.get('settings', {})
+            for setting_key, setting_value in settings.items():
+                cursor.execute(
+                    'INSERT OR REPLACE INTO user_settings (user_id, setting_key, setting_value, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
+                    (user_id, setting_key, str(setting_value))
+                )
+
+            # 2. 恢復自選清單（先清除再新增）
+            cursor.execute('DELETE FROM user_watchlist WHERE user_id = ?', (user_id,))
+            watchlist = backup_data.get('watchlist', [])
+            for item in watchlist:
+                cursor.execute(
+                    'INSERT INTO user_watchlist (user_id, symbol, added_at) VALUES (?, ?, ?)',
+                    (user_id, item['symbol'], item.get('added_at', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                )
+
+            # 3. 恢復調整紀錄（先清除再新增）
+            cursor.execute('DELETE FROM indicator_adjustment_log WHERE user_id = ?', (user_id,))
+            adjustments = backup_data.get('adjustments', [])
+            for adj in adjustments:
+                cursor.execute('''
+                    INSERT INTO indicator_adjustment_log
+                    (user_id, symbol, indicator_type, timeframe, change_pct, original_score, adjusted_score, adjusted_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    user_id,
+                    adj['symbol'],
+                    adj['indicator_type'],
+                    adj.get('timeframe', ''),
+                    adj.get('change_pct'),
+                    adj.get('original_score'),
+                    adj.get('adjusted_score'),
+                    adj.get('adjusted_at', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                ))
+
+            conn.commit()
+            conn.close()
+
+            return jsonify({
+                "success": True,
+                "message": f"✓ 備份恢復完成：{len(settings)} 項設定、{len(watchlist)} 個自選股票、{len(adjustments)} 筆調整紀錄"
+            }), 200
+
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            raise e
+
+    except Exception as e:
+        print(f"❌ 上傳備份時出錯: {e}")
+        return jsonify({"error": str(e)}), 500
+
+    
+# --------------------------------------------------------
+# 啟動伺服器(永遠在最後)
+# --------------------------------------------------------
+if __name__ == '__main__':
+    print("啟動金融資料 API 伺服器中...")
+    print(f"👉 資料庫位置: {DB_PATH}")
+    debug_mode = str(os.environ.get('FLASK_DEBUG', '0')).lower() in ('1', 'true', 'yes', 'on')
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=debug_mode)

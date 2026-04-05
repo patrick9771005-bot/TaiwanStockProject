@@ -1,0 +1,56 @@
+<!-- ================= [分頁 3：0050 診斷雷達] ================= -->
+<div class="s-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2b2f36; padding-bottom: 15px; margin-bottom: 15px;">
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <h3 style="margin: 0; color: #fff;">🎯 權值50 診斷雷達</h3>
+            <span id="radar-update-time" style="font-size: 0.85em; color: var(--primary); background: rgba(55,148,255,0.1); padding: 4px 10px; border-radius: 4px;">🕒 數據日期: 載入中...</span>
+        </div>
+        <button class="search-btn" onclick="loadRadarData(true)" style="width: auto; padding: 10px 20px; margin: 0;">
+            🔄 執行全盤掃描
+        </button>
+    </div>
+
+    <!-- 掃描前的提示區 -->
+    <div id="radar-placeholder" style="color: var(--dim); text-align: center; padding: 60px;">
+        <div style="font-size: 2.5em; margin-bottom: 15px;">📡</div>
+        <p style="margin: 0; font-size: 1.1em;">準備執行全自動診斷掃描...</p>
+        <p style="margin: 5px 0 0 0; font-size: 0.85em; color: #444;">系統將依據轉折優先權自動排序 50 檔權值股</p>
+    </div>
+
+    <!-- 雷達排行榜表格 -->
+    <table id="radar-table" style="display: none; width: 100%; border-collapse: collapse;">
+        <thead>
+            <tr>
+                <th style="width: 50px; text-align: center;">排名</th>
+                <th style="text-align: left;">代號 / 名稱</th>
+                <th style="text-align: center;">即時總分</th>
+                <th style="text-align: center;">MACD 動能</th>
+                <th style="text-align: center;">交易診斷</th>
+            </tr>
+        </thead>
+        <tbody id="radar-body">
+            <!-- 由 JS 動態填充 -->
+        </tbody>
+    </table>
+</div>
+
+<style>
+    /* 雷達頁面專屬校對樣式 */
+    #radar-table th { color: var(--dim); font-size: 0.8em; padding: 12px; border-bottom: 2px solid #2b2f36; text-transform: uppercase; letter-spacing: 1px; }
+    #radar-table td { padding: 15px 12px; border-bottom: 1px solid #21262c; vertical-align: middle; }
+    #radar-table tr:hover td { background: rgba(55, 148, 255, 0.04); cursor: pointer; }
+    
+    .rank-num { text-align: center; font-family: 'Oswald', sans-serif; font-weight: bold; color: #444; }
+    .rank-top-3 { color: #f0b90b; font-size: 1.2em; }
+    
+    .radar-symbol { color: #fff; font-weight: bold; font-size: 1.1em; }
+    .radar-name { color: var(--dim); font-size: 0.85em; margin-left: 8px; }
+    
+    .score-badge { text-align: center; font-size: 1.1em; font-weight: bold; color: var(--primary); }
+    .macd-badge { text-align: center; font-weight: bold; }
+    .macd-pos { color: var(--success); }
+    .macd-neg { color: var(--danger); }
+    
+    .diag-label { display: flex; justify-content: center; }
+    .conclusion.hot { background: rgba(255, 59, 106, 0.18); color: #ff3b6a; }
+</style>

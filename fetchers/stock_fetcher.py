@@ -1,0 +1,147 @@
+import os
+import sys
+import sqlite3
+import time
+import yfinance as yf
+import pandas as pd
+from datetime import datetime
+
+# ---------------------------------------------------------
+# 1. 【路徑校準】
+# ---------------------------------------------------------
+current_dir = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(current_dir)
+DB_PATH = os.path.join(BASE_DIR, 'stock_system.db')
+
+sys.path.append(BASE_DIR)
+from models.technical_engine import calculate_technical_scores
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# ---------------------------------------------------------
+# 2. 【初始化資料庫】新增這個函數來建立遺失的表格
+# ---------------------------------------------------------
+def init_db():
+    print(f"🛠️ 正在檢查資料庫結構...")
+    conn = get_db_connection()
+    # 建立原始資料表
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS stock_raw (
+            date TEXT, symbol TEXT, timeframe TEXT,
+            open REAL, high REAL, low REAL, close REAL, volume INTEGER,
+            PRIMARY KEY (date, symbol, timeframe)
+        )
+    ''')
+    # 建立分數資料表
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS stock_scores (
+            date TEXT, symbol TEXT, timeframe TEXT,
+            ma_score INTEGER, kd_score INTEGER, rsi_score INTEGER,
+            macd_score INTEGER, vol_score INTEGER, total_score INTEGER,
+            kd_entangled INTEGER, rsi_entangled INTEGER, macd_entangled INTEGER,
+            PRIMARY KEY (date, symbol, timeframe)
+        )
+    ''')
+    # 建立自選清單表
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS user_watchlist (
+            symbol TEXT PRIMARY KEY,
+            added_date TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+    print(f"✅ 資料庫初始化完畢。")
+
+# ---------------------------------------------------------
+# 3. 【核心功能】
+# ---------------------------------------------------------
+def process_stock(symbol, timeframe='daily'):
+    period = "2y" if timeframe in ['weekly', 'monthly'] else "6mo"
+    interval = "1d"
+    if timeframe == 'weekly': interval = "1wk"
+    elif timeframe == 'monthly': interval = "1mo"
+
+    try:
+        df = yf.download(f"{symbol}.TW", period=period, interval=interval, progress=False)
+        if df.empty or len(df) < 30:
+            print(f"⚠️ {symbol} ({timeframe}) 資料不足，跳過。")
+            return
+        
+        # 💡 修正 FutureWarning: 使用 .iloc[0] 確保抓到數值
+        def get_val(val):
+            return float(val.iloc[0]) if hasattr(val, 'iloc') else float(val)
+
+        conn = get_db_connection()
+        
+        # 🔥 關鍵升級：時光機回補邏輯
+        # 確保我們至少保留前 30 天的資料讓均線可以算，剩下的天數最多回補 15 天
+        backfill_days = min(15, len(df) - 30) 
+        latest_score = 0
+        
+        # 從 15 天前一路算到今天 (從最舊排到最新，避免資料庫日期錯亂)
+        for i in range(backfill_days - 1, -1, -1):
+            # 切割 DataFrame，模擬「當時」的歷史視角，完全杜絕未來函數
+            if i == 0:
+                sliced_df = df # 今天
+            else:
+                sliced_df = df.iloc[:-i] 
+            
+            # 呼叫大腦計算「當時」的分數
+            result = calculate_technical_scores(sliced_df, timeframe=timeframe)
+            
+            last_date = sliced_df.index[-1].strftime("%Y-%m-%d")
+            latest_row = sliced_df.iloc[-1]
+            
+            s = result['scores']
+            f = result['flags']
+
+            # 存入原始資料
+            conn.execute('''
+                INSERT OR REPLACE INTO stock_raw VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (last_date, symbol, timeframe, 
+                  get_val(latest_row['Open']), get_val(latest_row['High']), 
+                  get_val(latest_row['Low']), get_val(latest_row['Close']), 
+                  int(latest_row['Volume'])))
+            
+            # 存入分數
+            conn.execute('''
+                INSERT OR REPLACE INTO stock_scores VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (last_date, symbol, timeframe, s['MA'], s['KD'], s['RSI'], s['MACD'], s['Volume'], s['Total'],
+                  int(f['KD_entangled']), int(f['RSI_entangled']), int(f['MACD_entangled'])))
+            
+            if i == 0:
+                latest_score = s['Total'] # 記錄今天的最終分數以便印出
+
+        conn.commit()
+        conn.close()
+        print(f"✨ {symbol} ({timeframe}) 評分與 15 日歷史回補完成 ➔ 最新總分: {latest_score}")
+
+    except Exception as e:
+        print(f"❌ {symbol} 處理失敗: {e}")
+
+def batch_scan():
+    # 先初始化表格！
+    init_db()
+
+    tw50_symbols = [
+        "2330", "2317", "2454", "2308", "2382", "2881", "2882", "2891", "2303", "3711", 
+        "2886", "2884", "2885", "1216", "2002", "2892", "2880", "2345", "2395", "2412", 
+        "5871", "2883", "2887", "2912", "3008", "3034", "3037", "3045", "3231", "3661", 
+        "4904", "4938", "5876", "5880", "6505", "6669", "2207", "2301", "2324", "2357", 
+        "2379", "2603", "2609", "2615", "9910", "1101", "1590", "2353", "2376", "2408"
+    ]
+    
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 啟動批次掃描，目標庫：{DB_PATH}")
+
+    for symbol in tw50_symbols:
+        process_stock(symbol, timeframe='daily')
+        time.sleep(1.2) 
+        
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🎉 掃描任務全部完成！")
+
+if __name__ == "__main__":
+    batch_scan()
