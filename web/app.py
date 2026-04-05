@@ -340,6 +340,7 @@ def require_login_for_app():
         '/login',
         '/register',
         '/healthz',
+        '/api/cron/run-task',
         '/api/auth/login',
         '/api/auth/register'
     }
@@ -598,6 +599,30 @@ def healthz():
         return jsonify({"ok": True, "db": "ok"}), 200
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route('/api/cron/run-task', methods=['GET'])
+def api_trigger_cron_task():
+    safe_token = os.environ.get('CRON_TOKEN', 'dev-secret-123')
+    if request.args.get('token') != safe_token:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 403
+
+    task_type = (request.args.get('task') or '').strip().lower()
+
+    try:
+        if task_type == 'stocks':
+            from fetchers.stock_fetcher import batch_scan
+            batch_scan()
+            return jsonify({"status": "success", "message": "個股批次資料更新完成"}), 200
+
+        if task_type == 'macro':
+            from fetchers.main_worker import main_job
+            main_job()
+            return jsonify({"status": "success", "message": "大盤與匯率更新完成"}), 200
+
+        return jsonify({"status": "error", "message": "未知的任務類型，請使用 stocks 或 macro"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route('/api/auth/login', methods=['GET', 'POST'])
