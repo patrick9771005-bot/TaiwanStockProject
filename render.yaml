@@ -3,8 +3,8 @@ services:
     name: taiwan-stock-project
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --chdir web app:app --workers 1 --threads 4 --timeout 120
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn --chdir web app:app --workers 1 --threads 4 --timeout 120"
     envVars:
       - key: FLASK_SECRET_KEY
         generateValue: true
@@ -15,8 +15,4 @@ services:
       - key: SESSION_MAX_HOURS
         value: "6"
       - key: STOCK_DB_PATH
-        value: /var/data/stock_system.db
-    disk:
-      name: stock-db
-      mountPath: /var/data
-      sizeGB: 1
+        value: "stock_system.db"
