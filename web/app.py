@@ -179,7 +179,13 @@ def purge_inactive_users(days=30):
     cutoff = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE COALESCE(last_login_at, created_at) < ?", (cutoff,))
+    if is_postgres_enabled():
+        cursor.execute(
+            "SELECT id FROM users WHERE COALESCE(NULLIF(last_login_at, '')::timestamp, created_at) < ?::timestamp",
+            (cutoff,)
+        )
+    else:
+        cursor.execute("SELECT id FROM users WHERE COALESCE(last_login_at, created_at) < ?", (cutoff,))
     rows = cursor.fetchall()
     stale_ids = [int(r['id']) for r in rows]
     if stale_ids:
