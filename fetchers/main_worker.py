@@ -1,4 +1,3 @@
-import sqlite3
 import os
 import sys
 import pandas as pd
@@ -6,6 +5,7 @@ import yfinance as yf
 import requests
 import time
 from datetime import datetime
+from db.compat import get_connection
 
 # 修正路徑以載入 models
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -13,7 +13,37 @@ sys.path.append(base_dir)
 from models.scoring_engine import calculate_score_a, calculate_score_b, calculate_score_c, generate_diagnosis
 
 def get_db_connection():
-    return sqlite3.connect(os.path.join(base_dir, "data", "stock_system.db"))
+    db_path = os.environ.get('STOCK_DB_PATH', os.path.join(base_dir, "data", "stock_system.db"))
+    return get_connection(db_path)
+
+
+def ensure_market_tables(conn):
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS market_raw (
+            date TEXT PRIMARY KEY,
+            taiex_price REAL,
+            twd_fx REAL,
+            foreign_buy REAL,
+            sitc_buy REAL,
+            dealer_buy REAL,
+            is_ready INTEGER DEFAULT 0
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS market_scores (
+            date TEXT PRIMARY KEY,
+            score_a INTEGER,
+            score_b_tx INTEGER,
+            score_b_mtx INTEGER,
+            score_b_elec INTEGER,
+            score_b_fin INTEGER,
+            score_c_total INTEGER,
+            diagnosis TEXT,
+            FOREIGN KEY(date) REFERENCES market_raw(date)
+        )
+    ''')
+    conn.commit()
 
 def main_job():
     print("🔍 啟動大盤時光機：往前抓取最近 5 個交易日資料...")
@@ -52,6 +82,7 @@ def main_job():
     target_dates = valid_dates[-5:]
     
     conn = get_db_connection()
+    ensure_market_tables(conn)
     cursor = conn.cursor()
     
     for target_date in target_dates:
@@ -121,13 +152,30 @@ def main_job():
 
         # === 5. 寫入資料庫 ===
         cursor.execute('''
-            INSERT OR REPLACE INTO market_raw (date, taiex_price, twd_fx, foreign_buy, sitc_buy, dealer_buy, is_ready)
+            INSERT INTO market_raw (date, taiex_price, twd_fx, foreign_buy, sitc_buy, dealer_buy, is_ready)
             VALUES (?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(date)
+            DO UPDATE SET
+                taiex_price = excluded.taiex_price,
+                twd_fx = excluded.twd_fx,
+                foreign_buy = excluded.foreign_buy,
+                sitc_buy = excluded.sitc_buy,
+                dealer_buy = excluded.dealer_buy,
+                is_ready = excluded.is_ready
         ''', (date_dash, taiex_price, twd_fx, foreign_buy, sitc_buy, dealer_buy))
         
         cursor.execute('''
-            INSERT OR REPLACE INTO market_scores (date, score_a, score_b_tx, score_b_mtx, score_b_elec, score_b_fin, score_c_total, diagnosis)
+            INSERT INTO market_scores (date, score_a, score_b_tx, score_b_mtx, score_b_elec, score_b_fin, score_c_total, diagnosis)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date)
+            DO UPDATE SET
+                score_a = excluded.score_a,
+                score_b_tx = excluded.score_b_tx,
+                score_b_mtx = excluded.score_b_mtx,
+                score_b_elec = excluded.score_b_elec,
+                score_b_fin = excluded.score_b_fin,
+                score_c_total = excluded.score_c_total,
+                diagnosis = excluded.diagnosis
         ''', (date_dash, int(score_a), int(score_b["TX"]), int(score_b["MTX"]), int(score_b["ELEC"]), int(score_b["FIN"]), int(score_c), diagnosis))
         
         conn.commit()

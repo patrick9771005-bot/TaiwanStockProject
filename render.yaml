@@ -6,6 +6,8 @@ services:
     buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn --chdir web app:app --workers 1 --threads 4 --timeout 120"
     envVars:
+      - key: DATABASE_URL
+        sync: false
       - key: FLASK_SECRET_KEY
         generateValue: true
       - key: FLASK_DEBUG
@@ -14,5 +16,31 @@ services:
         value: "1"
       - key: SESSION_MAX_HOURS
         value: "6"
+      - key: CROSS_DAY_SESSION_EXPIRE
+        value: "0"
       - key: STOCK_DB_PATH
-        value: "stock_system.db"
+        value: "data/stock_system.db"
+
+  - type: cron
+    name: taiwan-stock-macro-cron
+    runtime: python
+    schedule: "*/30 1-9 * * 1-5"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python fetchers/main_worker.py"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: STOCK_DB_PATH
+        value: "data/stock_system.db"
+
+  - type: cron
+    name: taiwan-stock-scan-cron
+    runtime: python
+    schedule: "15 9 * * 1-5"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python fetchers/stock_fetcher.py"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: STOCK_DB_PATH
+        value: "data/stock_system.db"
