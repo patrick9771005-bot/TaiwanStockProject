@@ -137,7 +137,7 @@ def ensure_user_tables():
         SELECT username_lower, COUNT(*) AS c
         FROM users
         GROUP BY username_lower
-        HAVING c > 1
+        HAVING COUNT(*) > 1
         LIMIT 1
     ''')
     duplicate = cursor.fetchone()
