@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import re
+import time
 import pandas as pd
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, render_template, session, redirect, url_for, send_file
@@ -25,6 +26,8 @@ app = Flask(__name__)
 app.json.ensure_ascii = False 
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-change-me')
 SESSION_MAX_HOURS = float(os.environ.get('SESSION_MAX_HOURS', '6'))
+BOOTSTRAP_INTERVAL_SECONDS = int(os.environ.get('BOOTSTRAP_INTERVAL_SECONDS', '600'))
+PURGE_INTERVAL_SECONDS = int(os.environ.get('PURGE_INTERVAL_SECONDS', '21600'))
 
 
 def _env_bool(name, default=False):
@@ -43,6 +46,8 @@ CROSS_DAY_SESSION_EXPIRE = _env_bool('CROSS_DAY_SESSION_EXPIRE', default=False)
 # 🔥 關鍵修正：預設使用 data/stock_system.db，部署時可透過環境變數覆蓋
 DB_PATH = os.environ.get('STOCK_DB_PATH', os.path.join(BASE_DIR, 'data', 'stock_system.db'))
 USERNAME_PATTERN = re.compile(r'^[A-Za-z0-9]+$')
+_last_bootstrap_at = 0.0
+_last_purge_at = 0.0
 
 def get_db_connection():
     if str(os.environ.get('DB_DEBUG_LOG', '0')).lower() in ('1', 'true', 'yes', 'on'):
@@ -195,6 +200,19 @@ def purge_inactive_users(days=30):
         cursor.execute(f"DELETE FROM users WHERE id IN ({placeholders})", stale_ids)
     conn.commit()
     conn.close()
+
+
+def maybe_run_db_maintenance():
+    global _last_bootstrap_at, _last_purge_at
+    now_ts = time.time()
+
+    if now_ts - _last_bootstrap_at >= max(30, BOOTSTRAP_INTERVAL_SECONDS):
+        ensure_user_tables()
+        _last_bootstrap_at = now_ts
+
+    if now_ts - _last_purge_at >= max(300, PURGE_INTERVAL_SECONDS):
+        purge_inactive_users(days=30)
+        _last_purge_at = now_ts
 
 
 def normalize_username(username):
@@ -408,8 +426,7 @@ def require_login_for_app():
         return
 
     try:
-        ensure_user_tables()
-        purge_inactive_users(days=30)
+        maybe_run_db_maintenance()
     except Exception as e:
         if path.startswith('/api/'):
             return jsonify({
