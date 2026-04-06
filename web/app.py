@@ -128,7 +128,10 @@ def ensure_user_tables():
             cursor.execute("ALTER TABLE users ADD COLUMN last_login_at TEXT")
 
     cursor.execute("UPDATE users SET username_lower = LOWER(username) WHERE username_lower IS NULL OR username_lower = ''")
-    cursor.execute("UPDATE users SET last_login_at = COALESCE(last_login_at, created_at, CURRENT_TIMESTAMP)")
+    if is_postgres_enabled():
+        cursor.execute("UPDATE users SET last_login_at = COALESCE(last_login_at, created_at::text, CURRENT_TIMESTAMP::text)")
+    else:
+        cursor.execute("UPDATE users SET last_login_at = COALESCE(last_login_at, created_at, CURRENT_TIMESTAMP)")
 
     cursor.execute('''
         SELECT username_lower, COUNT(*) AS c
