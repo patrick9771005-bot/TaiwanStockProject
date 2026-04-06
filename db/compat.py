@@ -2,6 +2,7 @@
 import os
 import sqlite3
 from typing import Any, Iterable, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 class HybridRow(dict[str, Any]):
@@ -87,7 +88,9 @@ def get_connection(default_sqlite_path: str) -> CompatConnection:
         except Exception as exc:
             raise RuntimeError("DATABASE_URL is set but psycopg is not installed") from exc
 
-        conn = psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row)
+        db_url = os.environ["DATABASE_URL"]
+        db_url = _normalize_postgres_url(db_url)
+        conn = psycopg.connect(db_url, row_factory=dict_row)
         return CompatConnection(conn, is_postgres=True)
 
     db_dir = os.path.dirname(default_sqlite_path)
@@ -126,3 +129,23 @@ def _to_hybrid_row(row: Any, columns: list[str]) -> HybridRow:
         key = str(i)
         data[key] = value
     return HybridRow(data)
+
+
+def _normalize_postgres_url(url: str) -> str:
+    try:
+        parsed = urlsplit(url)
+        host = (parsed.hostname or '').lower()
+        if host.endswith('supabase.co'):
+            query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+            if 'sslmode' not in query:
+                query['sslmode'] = 'require'
+                return urlunsplit((
+                    parsed.scheme,
+                    parsed.netloc,
+                    parsed.path,
+                    urlencode(query),
+                    parsed.fragment
+                ))
+        return url
+    except Exception:
+        return url

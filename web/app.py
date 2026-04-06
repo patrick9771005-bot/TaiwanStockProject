@@ -381,8 +381,6 @@ def get_latest_item_with_configs(symbol, timeframe, macd_config=None, kd_config=
 
 @app.before_request
 def require_login_for_app():
-    ensure_user_tables()
-    purge_inactive_users(days=30)
     path = request.path or '/'
     public_paths = {
         '/login',
@@ -395,6 +393,24 @@ def require_login_for_app():
 
     if path.startswith('/static/'):
         return
+
+    # 健康檢查必須盡量單純，避免被初始化流程失敗覆蓋成 HTML 500。
+    if path == '/healthz':
+        return
+
+    try:
+        ensure_user_tables()
+        purge_inactive_users(days=30)
+    except Exception as e:
+        if path.startswith('/api/'):
+            return jsonify({
+                "error": "資料庫初始化失敗",
+                "details": str(e)
+            }), 500
+        return jsonify({
+            "error": "資料庫初始化失敗",
+            "details": str(e)
+        }), 500
 
     if path in public_paths:
         return
